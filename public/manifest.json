@@ -1,0 +1,45 @@
+{
+  "name": "LockIn — Fitness Tracker",
+  "short_name": "LockIn",
+  "description": "Your personal fitness, nutrition, and habit tracker. Level up your life.",
+  "start_url": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#070b14",
+  "theme_color": "#06b6d4",
+  "orientation": "portrait-primary",
+  "categories": ["health", "fitness", "lifestyle"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Log Workout",
+      "url": "/workout",
+      "description": "Start logging a workout"
+    },
+    {
+      "name": "Log Meal",
+      "url": "/nutrition",
+      "description": "Log what you ate"
+    }
+  ]
+}

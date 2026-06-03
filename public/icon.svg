@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="100" fill="#070b14"/>
+  <!-- Dumbbell left plate outer -->
+  <rect x="40" y="190" width="60" height="132" rx="16" fill="#a855f7"/>
+  <!-- Dumbbell left plate inner -->
+  <rect x="100" y="210" width="40" height="92" rx="10" fill="#06b6d4"/>
+  <!-- Bar -->
+  <rect x="140" y="236" width="232" height="40" rx="8" fill="#06b6d4"/>
+  <!-- Dumbbell right plate inner -->
+  <rect x="372" y="210" width="40" height="92" rx="10" fill="#06b6d4"/>
+  <!-- Dumbbell right plate outer -->
+  <rect x="412" y="190" width="60" height="132" rx="16" fill="#a855f7"/>
+  <!-- Lightning bolt (energy/power) -->
+  <polygon points="280,100 240,270 268,270 232,412 312,220 276,220 312,100" fill="#f59e0b" opacity="0.9"/>
+</svg>
