@@ -1,415 +1,187 @@
 'use client';
-
 import { useState } from 'react';
-import { Search, ChevronRight, X } from 'lucide-react';
-import Card from '@/components/ui/Card';
-import Modal from '@/components/ui/Modal';
-import { EXERCISES, EXERCISE_CATEGORIES, searchExercises } from '@/data/exercises';
-import type { ExerciseData, MuscleGroup } from '@/types';
+import { EXERCISES, CATEGORIES, MUSCLE_LABELS, type Exercise } from '@/data/exercises';
+import MuscleDiagram from '@/components/ui/MuscleDiagram';
 
-const MUSCLE_COLORS: Record<string, string> = {
-  chest: '#06b6d4',
-  upper_chest: '#06b6d4',
-  lower_chest: '#0891b2',
-  back: '#a855f7',
-  lats: '#a855f7',
-  traps: '#9333ea',
-  rhomboids: '#7e22ce',
-  lower_back: '#7c3aed',
-  shoulders: '#f59e0b',
-  front_delt: '#f59e0b',
-  side_delt: '#d97706',
-  rear_delt: '#b45309',
-  biceps: '#10b981',
-  triceps: '#059669',
-  forearms: '#047857',
-  quads: '#ef4444',
-  hamstrings: '#dc2626',
-  glutes: '#b91c1c',
-  calves: '#991b1b',
-  core: '#ec4899',
-  abs: '#ec4899',
-  obliques: '#db2777',
-  hip_flexors: '#be185d',
-  full_body: '#06b6d4',
-};
+const ISearch = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.6-3.6"/></svg>;
+const IChevR = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7"/></svg>;
+const IChevL = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7"/></svg>;
+const IDumbbell = () => <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 8.5v7M3.5 10v4M17.5 8.5v7M20.5 10v4M6.5 12h11"/></svg>;
+const ICog = () => <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M4.2 7.5l1.9 1.1M17.9 15.4l1.9 1.1M19.8 7.5l-1.9 1.1M6.1 15.4l-1.9 1.1"/></svg>;
+const IAlert = () => <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4.5l8.5 14.5h-17z"/><path d="M12 10v4M12 16.6v.1"/></svg>;
+const IShield = () => <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 2.5v5c0 5-3.2 8.3-7 9.5-3.8-1.2-7-4.5-7-9.5v-5z"/></svg>;
+const IPlay = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5.5v13l11-6.5z"/></svg>;
 
-const MUSCLE_LABELS: Partial<Record<MuscleGroup, string>> = {
-  chest: 'Chest',
-  upper_chest: 'Upper Chest',
-  back: 'Back',
-  lats: 'Lats',
-  traps: 'Traps',
-  shoulders: 'Shoulders',
-  front_delt: 'Front Delt',
-  side_delt: 'Side Delt',
-  rear_delt: 'Rear Delt',
-  biceps: 'Biceps',
-  triceps: 'Triceps',
-  quads: 'Quads',
-  hamstrings: 'Hamstrings',
-  glutes: 'Glutes',
-  calves: 'Calves',
-  core: 'Core',
-  abs: 'Abs',
-  lower_back: 'Lower Back',
-};
+function difTone(d: string) {
+  if (d === 'Beginner') return 'var(--good)';
+  if (d === 'Intermediate') return 'var(--carbs)';
+  return 'var(--ember-bright)';
+}
 
-const DIFFICULTY_COLORS = {
-  beginner:     { bg: 'rgba(16,185,129,0.15)',  text: '#10b981' },
-  intermediate: { bg: 'rgba(245,158,11,0.15)',  text: '#f59e0b' },
-  advanced:     { bg: 'rgba(239,68,68,0.15)',   text: '#ef4444' },
-};
-
-export default function ExercisesPage() {
-  const [query, setQuery] = useState('');
-  const [category, setCategory] = useState<string | null>(null);
-  const [selected, setSelected] = useState<ExerciseData | null>(null);
-
-  const filtered = searchExercises(query).filter(
-    (e) => !category || e.category === category
-  );
-
+function ExerciseDetail({ ex, onBack }: { ex: Exercise; onBack: () => void }) {
+  const allMuscles = [...ex.targets, ...ex.secondary];
   return (
-    <div className="flex flex-col h-full">
-      {/* Header + Search */}
-      <div className="px-4 pt-6 pb-3 space-y-3 flex-shrink-0">
-        <h1 className="text-2xl font-bold text-white">Exercise Guide</h1>
+    <div className="screen-scroll screen-anim">
+      <div style={{ padding: '6px 18px 0', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={onBack} className="tap" style={{ width: 38, height: 38, borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface-2)', color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IChevL /></button>
+        <span className="kicker">{ex.category} · {ex.equipment}</span>
+      </div>
 
-        <div className="relative">
-          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search exercises, muscles, equipment..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            style={{ paddingLeft: '36px' }}
-          />
-          {query && (
-            <button
-              onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-            >
-              <X size={16} />
-            </button>
+      <div className="pad" style={{ paddingTop: 14, paddingBottom: 24 }}>
+        <div className="h-display" style={{ fontSize: 30, marginBottom: 14 }}>{ex.name}</div>
+
+        {/* Stats */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+          {[{ l: 'SETS', v: ex.sets }, { l: 'REPS', v: ex.reps }, { l: 'LEVEL', v: ex.difficulty, c: difTone(ex.difficulty) }].map(s => (
+            <div key={s.l} className="card" style={{ flex: 1, padding: '12px 8px', textAlign: 'center' }}>
+              <div className="num" style={{ fontSize: 19, color: s.c || 'var(--text)' }}>{s.v}</div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--faint)', letterSpacing: '0.08em', marginTop: 2 }}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Muscle map */}
+        <div className="card" style={{ padding: '18px 12px 14px', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 6px 8px' }}>
+            <span className="h-display" style={{ fontSize: 18 }}>Muscles worked</span>
+            <span style={{ display: 'flex', gap: 12 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}><span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--ember)', display: 'inline-block' }} />Target</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}><span style={{ width: 10, height: 10, borderRadius: 3, background: 'rgba(255,92,56,0.34)', display: 'inline-block' }} />Assist</span>
+            </span>
+          </div>
+          <MuscleDiagram targets={ex.targets} secondary={ex.secondary} width={108} />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center', marginTop: 6 }}>
+            {allMuscles.map(m => (
+              <span key={m} className="chip" style={{ background: ex.targets.includes(m) ? 'var(--ember-soft)' : 'var(--surface-2)', borderColor: ex.targets.includes(m) ? 'var(--ember-line)' : 'var(--line)', color: ex.targets.includes(m) ? 'var(--ember-bright)' : 'var(--muted)', fontSize: 12, padding: '6px 11px' }}>{MUSCLE_LABELS[m]}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* Demo placeholder */}
+        <div style={{ height: 120, borderRadius: 16, position: 'relative', overflow: 'hidden', background: 'repeating-linear-gradient(135deg, #181b22 0 11px, #14171d 11px 22px)', border: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--faint)' }}>
+            <span style={{ width: 34, height: 34, borderRadius: 99, border: '1.5px solid var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}><IPlay /></span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase' }}>exercise demo loop</span>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="card" style={{ padding: 16 }}>
+            <p style={{ margin: 0, fontSize: 15, lineHeight: 1.55, color: 'var(--text)', fontWeight: 500 }}>{ex.howto}</p>
+          </div>
+
+          <Section icon={<IDumbbell />} title="How to perform">
+            <NumberedList items={ex.steps} />
+          </Section>
+
+          {ex.machineSetup && (
+            <Section icon={<ICog />} title="Machine setup">
+              <BulletList items={ex.machineSetup} dot="var(--water)" />
+            </Section>
           )}
-        </div>
 
-        {/* Category pills */}
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
-          <CategoryPill label="All" active={!category} onClick={() => setCategory(null)} />
-          {EXERCISE_CATEGORIES.map((cat) => (
-            <CategoryPill key={cat} label={cat} active={category === cat} onClick={() => setCategory(cat === category ? null : cat)} />
-          ))}
+          <Section icon={<IAlert />} title="Common mistakes" accent="var(--carbs)">
+            <BulletList items={ex.mistakes} dot="var(--carbs)" />
+          </Section>
+
+          <Section icon={<IShield />} title="Safety tips" accent="var(--good)">
+            <BulletList items={ex.safety} dot="var(--good)" />
+          </Section>
         </div>
       </div>
-
-      {/* List */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
-        {filtered.length === 0 ? (
-          <div className="text-center py-10">
-            <p className="text-slate-400 text-sm">No exercises found for &quot;{query}&quot;</p>
-          </div>
-        ) : (
-          filtered.map((exercise) => (
-            <ExerciseRow key={exercise.id} exercise={exercise} onTap={() => setSelected(exercise)} />
-          ))
-        )}
-      </div>
-
-      {/* Detail modal */}
-      <Modal
-        open={!!selected}
-        onClose={() => setSelected(null)}
-        title={selected?.name ?? ''}
-        fullScreen
-      >
-        {selected && <ExerciseDetail exercise={selected} />}
-      </Modal>
     </div>
   );
 }
 
-// ─── Category pill ─────────────────────────────────────────────────────────────
-
-function CategoryPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function Section({ icon, title, accent = 'var(--ember)', children }: { icon: React.ReactNode; title: string; accent?: string; children: React.ReactNode }) {
   return (
-    <button
-      onClick={onClick}
-      className="flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap"
-      style={{
-        background: active ? '#06b6d4' : '#0d1422',
-        color: active ? '#fff' : '#64748b',
-        border: `1px solid ${active ? '#06b6d4' : 'rgba(255,255,255,0.06)'}`,
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-// ─── Exercise row ──────────────────────────────────────────────────────────────
-
-function ExerciseRow({ exercise, onTap }: { exercise: ExerciseData; onTap: () => void }) {
-  const diff = DIFFICULTY_COLORS[exercise.difficulty];
-
-  return (
-    <button
-      onClick={onTap}
-      className="w-full text-left transition-all active:scale-98"
-    >
-      <Card className="flex items-center gap-3">
-        {/* Muscle indicator */}
-        <div className="flex flex-col gap-1 flex-shrink-0">
-          {exercise.primaryMuscles.slice(0, 2).map((m) => (
-            <div
-              key={m}
-              className="w-2.5 h-2.5 rounded-full"
-              style={{ background: MUSCLE_COLORS[m] ?? '#475569' }}
-            />
-          ))}
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <p className="text-sm font-semibold text-white truncate">{exercise.name}</p>
-            <span
-              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0"
-              style={{ background: diff.bg, color: diff.text }}
-            >
-              {exercise.difficulty}
-            </span>
-          </div>
-          <p className="text-xs text-slate-500">{exercise.category} · {exercise.equipment}</p>
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            {exercise.primaryMuscles.slice(0, 3).map((m) => (
-              <span
-                key={m}
-                className="text-[10px] px-1.5 py-0.5 rounded-md"
-                style={{ background: `${MUSCLE_COLORS[m] ?? '#475569'}20`, color: MUSCLE_COLORS[m] ?? '#475569' }}
-              >
-                {MUSCLE_LABELS[m as MuscleGroup] ?? m}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <ChevronRight size={16} className="text-slate-600 flex-shrink-0" />
-      </Card>
-    </button>
-  );
-}
-
-// ─── Exercise Detail ───────────────────────────────────────────────────────────
-
-function ExerciseDetail({ exercise }: { exercise: ExerciseData }) {
-  const diff = DIFFICULTY_COLORS[exercise.difficulty];
-
-  return (
-    <div className="space-y-5">
-      {/* Badges */}
-      <div className="flex flex-wrap gap-2">
-        <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-300">{exercise.category}</span>
-        <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-300">{exercise.equipment}</span>
-        <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: diff.bg, color: diff.text }}>
-          {exercise.difficulty}
-        </span>
-        <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-300">
-          {exercise.recommendedSets} sets · {exercise.recommendedReps} reps
-        </span>
+    <div className="card" style={{ padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+        <span style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: accent }}>{icon}</span>
+        <span className="h-display" style={{ fontSize: 18 }}>{title}</span>
       </div>
-
-      {/* Description */}
-      <p className="text-sm text-slate-300 leading-relaxed">{exercise.description}</p>
-
-      {/* Muscle SVG diagram */}
-      <Card>
-        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Muscles Worked</h3>
-        <MuscleBodyDiagram primaryMuscles={exercise.primaryMuscles} secondaryMuscles={exercise.secondaryMuscles} />
-        <div className="flex gap-3 mt-3">
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-cyan-400" />
-            <span className="text-xs text-slate-400">Primary</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-slate-600" style={{ background: 'rgba(6,182,212,0.3)' }} />
-            <span className="text-xs text-slate-400">Secondary</span>
-          </div>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {exercise.primaryMuscles.map((m) => (
-            <span key={m} className="text-xs px-2 py-1 rounded-lg font-medium" style={{ background: `${MUSCLE_COLORS[m] ?? '#06b6d4'}20`, color: MUSCLE_COLORS[m] ?? '#06b6d4' }}>
-              {MUSCLE_LABELS[m as MuscleGroup] ?? m}
-            </span>
-          ))}
-          {exercise.secondaryMuscles.map((m) => (
-            <span key={m} className="text-xs px-2 py-1 rounded-lg text-slate-400" style={{ background: '#1e293b' }}>
-              {MUSCLE_LABELS[m as MuscleGroup] ?? m}
-            </span>
-          ))}
-        </div>
-      </Card>
-
-      {/* Machine setup */}
-      {exercise.machineSetup && exercise.machineSetup.length > 0 && (
-        <Card style={{ background: 'rgba(168,85,247,0.05)', borderColor: 'rgba(168,85,247,0.15)' }}>
-          <h3 className="text-sm font-bold text-purple-400 mb-2">⚙️ Machine Setup</h3>
-          <ol className="space-y-2">
-            {exercise.machineSetup.map((step, i) => (
-              <li key={i} className="flex gap-2 text-sm text-slate-300">
-                <span className="text-purple-400 font-bold flex-shrink-0">{i + 1}.</span>
-                <span className="leading-relaxed">{step}</span>
-              </li>
-            ))}
-          </ol>
-        </Card>
-      )}
-
-      {/* Instructions */}
-      <Card>
-        <h3 className="text-sm font-bold text-white mb-3">📋 How to Perform</h3>
-        <ol className="space-y-3">
-          {exercise.instructions.map((step, i) => (
-            <li key={i} className="flex gap-3">
-              <span
-                className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5"
-                style={{ background: 'rgba(6,182,212,0.15)', color: '#06b6d4' }}
-              >
-                {i + 1}
-              </span>
-              <span className="text-sm text-slate-300 leading-relaxed">{step}</span>
-            </li>
-          ))}
-        </ol>
-      </Card>
-
-      {/* Common mistakes */}
-      <Card style={{ background: 'rgba(239,68,68,0.04)', borderColor: 'rgba(239,68,68,0.12)' }}>
-        <h3 className="text-sm font-bold text-red-400 mb-2">❌ Common Mistakes</h3>
-        <ul className="space-y-2">
-          {exercise.commonMistakes.map((m, i) => (
-            <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
-              <span className="text-red-400 flex-shrink-0 mt-0.5">•</span>
-              {m}
-            </li>
-          ))}
-        </ul>
-      </Card>
-
-      {/* Safety tips */}
-      <Card style={{ background: 'rgba(245,158,11,0.04)', borderColor: 'rgba(245,158,11,0.12)' }}>
-        <h3 className="text-sm font-bold text-amber-400 mb-2">⚠️ Safety Tips</h3>
-        <ul className="space-y-2">
-          {exercise.safetyTips.map((t, i) => (
-            <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
-              <span className="text-amber-400 flex-shrink-0 mt-0.5">•</span>
-              {t}
-            </li>
-          ))}
-        </ul>
-      </Card>
+      {children}
     </div>
   );
 }
 
-// ─── SVG Body Diagram ──────────────────────────────────────────────────────────
+function NumberedList({ items }: { items: string[] }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+      {items.map((s, i) => (
+        <div key={i} style={{ display: 'flex', gap: 11 }}>
+          <span className="num" style={{ width: 24, height: 24, borderRadius: 8, flexShrink: 0, background: 'var(--ember-soft)', color: 'var(--ember-bright)', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
+          <span style={{ fontSize: 14.5, color: 'var(--text)', lineHeight: 1.5, fontWeight: 500, paddingTop: 1 }}>{s}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-function MuscleBodyDiagram({ primaryMuscles, secondaryMuscles }: { primaryMuscles: MuscleGroup[]; secondaryMuscles: MuscleGroup[] }) {
-  const isHit = (group: string) => {
-    const normalizedGroup = group as MuscleGroup;
-    return primaryMuscles.includes(normalizedGroup) || secondaryMuscles.includes(normalizedGroup);
-  };
-  const isPrimary = (group: string) => primaryMuscles.includes(group as MuscleGroup);
+function BulletList({ items, dot = 'var(--ember)' }: { items: string[]; dot?: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {items.map((s, i) => (
+        <div key={i} style={{ display: 'flex', gap: 11 }}>
+          <span style={{ width: 7, height: 7, borderRadius: 99, background: dot, flexShrink: 0, marginTop: 7 }} />
+          <span style={{ fontSize: 14.5, color: 'var(--text)', lineHeight: 1.5, fontWeight: 500 }}>{s}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-  const hitColor = (group: string) => {
-    if (isPrimary(group)) return '#06b6d4';
-    if (isHit(group)) return 'rgba(6,182,212,0.35)';
-    return '#1e293b';
-  };
+export default function GuidePage() {
+  const [q, setQ] = useState('');
+  const [cat, setCat] = useState('All');
+  const [sel, setSel] = useState<Exercise | null>(null);
 
-  // Helper: check if any of multiple muscle names match
-  const anyHit = (...groups: string[]) => groups.some((g) => isHit(g));
-  const anyPrimary = (...groups: string[]) => groups.some((g) => isPrimary(g));
-  const multiColor = (...groups: string[]) => {
-    if (anyPrimary(...groups)) return '#06b6d4';
-    if (anyHit(...groups)) return 'rgba(6,182,212,0.35)';
-    return '#1e293b';
-  };
+  if (sel) return <ExerciseDetail ex={sel} onBack={() => setSel(null)} />;
+
+  const list = EXERCISES.filter(e => {
+    const okC = cat === 'All' || e.category === cat;
+    const okQ = !q || e.name.toLowerCase().includes(q.toLowerCase()) || [...e.targets, ...e.secondary].some(m => MUSCLE_LABELS[m]?.toLowerCase().includes(q.toLowerCase()));
+    return okC && okQ;
+  });
 
   return (
-    <div className="flex gap-4 justify-center">
-      {/* Front */}
-      <div className="text-center">
-        <p className="text-[10px] text-slate-500 mb-1">Front</p>
-        <svg viewBox="0 0 100 200" width="90" height="180" style={{ overflow: 'visible' }}>
-          {/* Head */}
-          <ellipse cx="50" cy="14" rx="12" ry="13" fill="#1e293b" stroke="#334155" strokeWidth="1" />
-          {/* Neck */}
-          <rect x="44" y="26" width="12" height="8" rx="3" fill="#1e293b" />
-          {/* Chest */}
-          <path d="M30 34 Q50 30 70 34 L68 65 Q50 68 32 65 Z" fill={multiColor('chest', 'upper_chest', 'lower_chest')} stroke="#334155" strokeWidth="0.5" />
-          {/* Shoulders */}
-          <ellipse cx="24" cy="42" rx="10" ry="12" fill={multiColor('shoulders', 'front_delt', 'side_delt')} stroke="#334155" strokeWidth="0.5" />
-          <ellipse cx="76" cy="42" rx="10" ry="12" fill={multiColor('shoulders', 'front_delt', 'side_delt')} stroke="#334155" strokeWidth="0.5" />
-          {/* Biceps */}
-          <rect x="13" y="54" width="10" height="22" rx="5" fill={hitColor('biceps')} stroke="#334155" strokeWidth="0.5" />
-          <rect x="77" y="54" width="10" height="22" rx="5" fill={hitColor('biceps')} stroke="#334155" strokeWidth="0.5" />
-          {/* Forearms */}
-          <rect x="12" y="77" width="10" height="20" rx="4" fill={hitColor('forearms')} stroke="#334155" strokeWidth="0.5" />
-          <rect x="78" y="77" width="10" height="20" rx="4" fill={hitColor('forearms')} stroke="#334155" strokeWidth="0.5" />
-          {/* Abs / core */}
-          <path d="M34 65 Q50 67 66 65 L65 95 Q50 97 35 95 Z" fill={multiColor('abs', 'core')} stroke="#334155" strokeWidth="0.5" />
-          {/* Obliques */}
-          <path d="M34 65 L32 95 Q28 90 28 80 L30 65 Z" fill={hitColor('obliques')} stroke="#334155" strokeWidth="0.5" />
-          <path d="M66 65 L68 95 Q72 90 72 80 L70 65 Z" fill={hitColor('obliques')} stroke="#334155" strokeWidth="0.5" />
-          {/* Hip flexors */}
-          <rect x="35" y="95" width="12" height="10" rx="3" fill={hitColor('hip_flexors')} stroke="#334155" strokeWidth="0.5" />
-          <rect x="53" y="95" width="12" height="10" rx="3" fill={hitColor('hip_flexors')} stroke="#334155" strokeWidth="0.5" />
-          {/* Quads */}
-          <rect x="33" y="105" width="14" height="42" rx="6" fill={hitColor('quads')} stroke="#334155" strokeWidth="0.5" />
-          <rect x="53" y="105" width="14" height="42" rx="6" fill={hitColor('quads')} stroke="#334155" strokeWidth="0.5" />
-          {/* Calves */}
-          <rect x="34" y="150" width="12" height="32" rx="5" fill={hitColor('calves')} stroke="#334155" strokeWidth="0.5" />
-          <rect x="54" y="150" width="12" height="32" rx="5" fill={hitColor('calves')} stroke="#334155" strokeWidth="0.5" />
-        </svg>
+    <div className="screen-scroll screen-anim">
+      <div className="pad" style={{ paddingTop: 8 }}>
+        <div className="kicker" style={{ marginBottom: 6 }}>{EXERCISES.length} exercises · machines & free weights</div>
+        <div className="h-display" style={{ fontSize: 30, marginBottom: 14 }}>Exercise Guide</div>
+
+        <div style={{ position: 'relative', marginBottom: 14 }}>
+          <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--faint)' }}><ISearch /></span>
+          <input className="field" value={q} onChange={e => setQ(e.target.value)} placeholder="Search exercise or muscle…" style={{ paddingLeft: 42 }} />
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, marginBottom: 14, scrollbarWidth: 'none' }}>
+          {CATEGORIES.map(c => (
+            <div key={c} onClick={() => setCat(c)} className={`chip tap${cat === c ? ' on' : ''}`} style={{ flexShrink: 0 }}>{c}</div>
+          ))}
+        </div>
       </div>
 
-      {/* Back */}
-      <div className="text-center">
-        <p className="text-[10px] text-slate-500 mb-1">Back</p>
-        <svg viewBox="0 0 100 200" width="90" height="180" style={{ overflow: 'visible' }}>
-          {/* Head */}
-          <ellipse cx="50" cy="14" rx="12" ry="13" fill="#1e293b" stroke="#334155" strokeWidth="1" />
-          {/* Neck */}
-          <rect x="44" y="26" width="12" height="8" rx="3" fill="#1e293b" />
-          {/* Traps */}
-          <path d="M35 34 Q50 28 65 34 L62 50 Q50 48 38 50 Z" fill={hitColor('traps')} stroke="#334155" strokeWidth="0.5" />
-          {/* Shoulders back */}
-          <ellipse cx="24" cy="42" rx="10" ry="12" fill={multiColor('shoulders', 'rear_delt')} stroke="#334155" strokeWidth="0.5" />
-          <ellipse cx="76" cy="42" rx="10" ry="12" fill={multiColor('shoulders', 'rear_delt')} stroke="#334155" strokeWidth="0.5" />
-          {/* Lats */}
-          <path d="M30 50 Q24 55 22 72 L36 78 Q36 62 38 50 Z" fill={multiColor('lats', 'back')} stroke="#334155" strokeWidth="0.5" />
-          <path d="M70 50 Q76 55 78 72 L64 78 Q64 62 62 50 Z" fill={multiColor('lats', 'back')} stroke="#334155" strokeWidth="0.5" />
-          {/* Rhomboids */}
-          <path d="M38 50 Q50 52 62 50 L62 70 Q50 72 38 70 Z" fill={hitColor('rhomboids')} stroke="#334155" strokeWidth="0.5" />
-          {/* Triceps */}
-          <rect x="13" y="54" width="10" height="22" rx="5" fill={hitColor('triceps')} stroke="#334155" strokeWidth="0.5" />
-          <rect x="77" y="54" width="10" height="22" rx="5" fill={hitColor('triceps')} stroke="#334155" strokeWidth="0.5" />
-          {/* Forearms */}
-          <rect x="12" y="77" width="10" height="20" rx="4" fill={hitColor('forearms')} stroke="#334155" strokeWidth="0.5" />
-          <rect x="78" y="77" width="10" height="20" rx="4" fill={hitColor('forearms')} stroke="#334155" strokeWidth="0.5" />
-          {/* Lower back */}
-          <path d="M36 78 L36 97 Q50 99 64 97 L64 78 Q50 80 36 78 Z" fill={hitColor('lower_back')} stroke="#334155" strokeWidth="0.5" />
-          {/* Glutes */}
-          <ellipse cx="42" cy="107" rx="12" ry="13" fill={hitColor('glutes')} stroke="#334155" strokeWidth="0.5" />
-          <ellipse cx="58" cy="107" rx="12" ry="13" fill={hitColor('glutes')} stroke="#334155" strokeWidth="0.5" />
-          {/* Hamstrings */}
-          <rect x="33" y="118" width="14" height="33" rx="6" fill={hitColor('hamstrings')} stroke="#334155" strokeWidth="0.5" />
-          <rect x="53" y="118" width="14" height="33" rx="6" fill={hitColor('hamstrings')} stroke="#334155" strokeWidth="0.5" />
-          {/* Calves */}
-          <rect x="34" y="154" width="12" height="28" rx="5" fill={hitColor('calves')} stroke="#334155" strokeWidth="0.5" />
-          <rect x="54" y="154" width="12" height="28" rx="5" fill={hitColor('calves')} stroke="#334155" strokeWidth="0.5" />
-        </svg>
+      <div className="pad" style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 20 }}>
+        {list.length === 0 && <div style={{ textAlign: 'center', color: 'var(--faint)', padding: '40px 0', fontWeight: 600 }}>No exercises match "{q}"</div>}
+        {list.map(ex => (
+          <div key={ex.id} onClick={() => setSel(ex)} className="card tap" style={{ padding: 12, display: 'flex', gap: 13, alignItems: 'center' }}>
+            <div style={{ width: 58, height: 58, borderRadius: 14, flexShrink: 0, background: 'repeating-linear-gradient(135deg,#1b1e26 0 8px,#15181f 8px 16px)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ember)' }}>
+              <IDumbbell />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 15.5, lineHeight: 1.15 }}>{ex.name}</div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}>{ex.category}</span>
+                <span style={{ color: 'var(--faint)', fontSize: 11 }}>·</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}>{ex.equipment}</span>
+                <span style={{ color: 'var(--faint)', fontSize: 11 }}>·</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: difTone(ex.difficulty) }}>{ex.difficulty}</span>
+              </div>
+            </div>
+            <span style={{ color: 'var(--faint)' }}><IChevR /></span>
+          </div>
+        ))}
       </div>
     </div>
   );

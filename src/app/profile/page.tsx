@@ -1,588 +1,309 @@
 'use client';
-
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, ChevronLeft, Check, User, Target, Dumbbell, Settings } from 'lucide-react';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
-import { getProfile, saveProfile, getGameStats, saveGameStats, getLatestWeight, todayStr } from '@/lib/storage';
-import { calcBMR, calcTDEE, calcCalorieGoal, calcMacroGoals, calcWaterGoal } from '@/lib/calculations';
-import type { UserProfile, FitnessGoal, ActivityLevel, GymExperience, Equipment, Gender } from '@/types';
+import { useApp, DEMO_STATE, type Profile } from '@/contexts/AppContext';
+import { rankForXp } from '@/lib/gamification';
+import { GOALS, ACTIVITY_LEVELS, EXPERIENCE_LEVELS, DIET_PREFS, DAYS } from '@/data/exercises';
+import Bar from '@/components/ui/Bar';
+import RankBadge from '@/components/ui/RankBadge';
+import Segmented from '@/components/ui/Segmented';
 
-const STEPS = ['basics', 'body', 'goals', 'experience', 'diet'] as const;
-type Step = typeof STEPS[number];
+function startXpFor(exp: string) {
+  if (exp === 'Experienced') return 8240;
+  if (exp === 'Some experience') return 4700;
+  return 180;
+}
 
-const GOAL_OPTIONS: { value: FitnessGoal; label: string; emoji: string; desc: string }[] = [
-  { value: 'lose_fat',       label: 'Lose Fat',      emoji: '🔥', desc: 'Burn fat while preserving muscle' },
-  { value: 'build_muscle',   label: 'Build Muscle',  emoji: '💪', desc: 'Maximize muscle growth' },
-  { value: 'get_stronger',   label: 'Get Stronger',  emoji: '⚡', desc: 'Increase strength and power' },
-  { value: 'improve_cardio', label: 'Cardio Fit',    emoji: '🏃', desc: 'Build endurance and stamina' },
-  { value: 'general_fitness',label: 'General Fit',   emoji: '🌟', desc: 'Overall health and fitness' },
-];
+const IChevL = () => (
+  <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+);
+const ICog = () => (
+  <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M4.2 7.5l1.9 1.1M17.9 15.4l1.9 1.1M19.8 7.5l-1.9 1.1M6.1 15.4l-1.9 1.1"/></svg>
+);
+const Logo = () => (
+  <svg width={42} height={42} viewBox="0 0 24 24" fill="none">
+    <rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="var(--ember)"/>
+    <path d="M12.6 5.5L7 13.2h4.3l-.9 5.3L17 10.6h-4.4z" fill="#1a0a06"/>
+  </svg>
+);
 
-const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string; desc: string }[] = [
-  { value: 'sedentary',    label: 'Sedentary',     desc: 'Little or no exercise' },
-  { value: 'light',        label: 'Light',         desc: '1–3 workouts per week' },
-  { value: 'moderate',     label: 'Moderate',      desc: '3–5 workouts per week' },
-  { value: 'very_active',  label: 'Very Active',   desc: '6–7 workouts per week' },
-  { value: 'extra_active', label: 'Extra Active',  desc: 'Athlete / physical job' },
-];
+type FormState = Omit<Profile, '_startXp'>;
 
-const EXPERIENCE_OPTIONS: { value: GymExperience; label: string; emoji: string }[] = [
-  { value: 'beginner',     label: 'Beginner',     emoji: '🌱' },
-  { value: 'intermediate', label: 'Intermediate', emoji: '🌿' },
-  { value: 'advanced',     label: 'Advanced',     emoji: '🌳' },
-];
-
-const EQUIPMENT_OPTIONS: { value: Equipment; label: string; emoji: string }[] = [
-  { value: 'full_gym', label: 'Full Gym',    emoji: '🏋️' },
-  { value: 'home',     label: 'Home Gym',   emoji: '🏠' },
-  { value: 'minimal',  label: 'Minimal',    emoji: '🎒' },
-];
-
-type FormState = {
-  name: string;
-  age: string;
-  gender: Gender;
-  heightFt: string;
-  heightIn: string;
-  weightLbs: string;
-  goalWeightLbs: string;
-  fitnessGoal: FitnessGoal;
-  activityLevel: ActivityLevel;
-  gymExperience: GymExperience;
-  preferredDays: string;
-  equipment: Equipment;
-  injuries: string;
-  dietPreference: string;
+const DEFAULT_FORM: FormState = {
+  name: '', age: '', gender: '', heightCm: '', weightKg: '', goalWeightKg: '',
+  goal: 'build-muscle', activity: 'Lightly active', experience: 'Some experience',
+  diet: 'High protein', days: ['Mon', 'Tue', 'Thu', 'Sat'],
 };
 
-const defaultForm: FormState = {
-  name: '', age: '', gender: 'male',
-  heightFt: '5', heightIn: '10',
-  weightLbs: '175', goalWeightLbs: '160',
-  fitnessGoal: 'build_muscle',
-  activityLevel: 'moderate',
-  gymExperience: 'beginner',
-  preferredDays: '4',
-  equipment: 'full_gym',
-  injuries: '',
-  dietPreference: '',
-};
+function Onboarding({ onComplete }: { onComplete: (p: Profile) => void }) {
+  const [step, setStep] = useState(0);
+  const [p, setP] = useState<FormState>({ ...DEFAULT_FORM });
+
+  const set = (k: keyof FormState, v: string | string[]) =>
+    setP(s => ({ ...s, [k]: v }));
+  const toggleDay = (d: string) =>
+    setP(s => ({ ...s, days: s.days.includes(d) ? s.days.filter(x => x !== d) : [...s.days, d] }));
+
+  const STEPS = 5;
+  const canNext = () => {
+    if (step === 0) return p.name.trim().length > 0;
+    if (step === 1) return !!(p.age && p.heightCm && p.weightKg);
+    if (step === 2) return !!(p.goal && p.goalWeightKg);
+    return true;
+  };
+  const finish = () => onComplete({ ...p, _startXp: startXpFor(p.experience) });
+  const demo = () => onComplete({
+    name: 'Alex', age: '27', gender: 'Male', heightCm: '178', weightKg: '80.6',
+    goalWeightKg: '76', goal: 'build-muscle', activity: 'Active',
+    experience: 'Experienced', diet: 'High protein', days: ['Mon', 'Tue', 'Thu', 'Sat'],
+    _startXp: 8240,
+  });
+
+  const Label = ({ children }: { children: React.ReactNode }) => (
+    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)', margin: '0 0 8px 2px' }}>{children}</div>
+  );
+
+  return (
+    <div className="app-root" style={{ position: 'fixed', inset: 0, zIndex: 10 }}>
+      <div style={{ height: 54 }} />
+
+      {/* Step progress header */}
+      {step < 4 && (
+        <div style={{ padding: '8px 18px 4px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={step === 0 ? undefined : () => setStep(s => s - 1)} className="tap" style={{ width: 38, height: 38, borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface-2)', color: step === 0 ? 'var(--faint)' : 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: step === 0 ? 0.4 : 1, cursor: step === 0 ? 'default' : 'pointer' }}>
+            <IChevL />
+          </button>
+          <div style={{ flex: 1, display: 'flex', gap: 6 }}>
+            {Array.from({ length: STEPS }).map((_, i) => (
+              <div key={i} style={{ flex: 1, height: 4, borderRadius: 99, background: i <= step ? 'var(--ember)' : 'var(--surface-3)', transition: 'background .3s ease' }} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="screen-scroll" style={{ padding: '18px 0' }}>
+        <div className="pad screen-anim" key={step}>
+
+          {step === 0 && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+                <Logo /><div className="h-display" style={{ fontSize: 30, letterSpacing: '0.02em' }}>LOCKIN</div>
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <div className="kicker" style={{ marginBottom: 10 }}>Let's get you set up</div>
+                <div className="h-display" style={{ fontSize: 30, marginBottom: 14 }}>Welcome 👋<br />What's your name?</div>
+                <div style={{ color: 'var(--muted)', fontSize: 15, fontWeight: 500 }}>A few quick questions so your plan, ranks and targets actually fit you.</div>
+              </div>
+              <Label>Your name</Label>
+              <input className="field" value={p.name} autoFocus onChange={e => set('name', e.target.value)} placeholder="e.g. Alex" />
+              <div onClick={demo} className="tap" style={{ marginTop: 18, textAlign: 'center', color: 'var(--muted)', fontSize: 14, fontWeight: 700, textDecoration: 'underline', textUnderlineOffset: 3 }}>Skip — explore the demo</div>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div>
+              <div style={{ marginBottom: 20 }}>
+                <div className="kicker" style={{ marginBottom: 10 }}>Hey {p.name || 'there'}</div>
+                <div className="h-display" style={{ fontSize: 30, marginBottom: 14 }}>About your body</div>
+                <div style={{ color: 'var(--muted)', fontSize: 15, fontWeight: 500 }}>We use these to size your calories, targets and starting rank.</div>
+              </div>
+              <Label>Biological sex</Label>
+              <Segmented options={['Male', 'Female', 'Other']} value={p.gender} onChange={v => set('gender', v)} />
+              <div style={{ height: 16 }} />
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div style={{ flex: 1 }}><Label>Age</Label><input className="field" type="number" inputMode="numeric" value={p.age} onChange={e => set('age', e.target.value)} placeholder="27" /></div>
+                <div style={{ flex: 1 }}><Label>Height (cm)</Label><input className="field" type="number" inputMode="numeric" value={p.heightCm} onChange={e => set('heightCm', e.target.value)} placeholder="178" /></div>
+              </div>
+              <div style={{ height: 16 }} />
+              <Label>Current weight (kg)</Label>
+              <input className="field" type="number" inputMode="decimal" value={p.weightKg} onChange={e => set('weightKg', e.target.value)} placeholder="80.5" />
+            </div>
+          )}
+
+          {step === 2 && (
+            <div>
+              <div style={{ marginBottom: 20 }}>
+                <div className="kicker" style={{ marginBottom: 10 }}>The mission</div>
+                <div className="h-display" style={{ fontSize: 30, marginBottom: 14 }}>What's the goal?</div>
+                <div style={{ color: 'var(--muted)', fontSize: 15, fontWeight: 500 }}>Pick the one that matters most right now.</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {GOALS.map(g => {
+                  const on = p.goal === g.id;
+                  return (
+                    <div key={g.id} onClick={() => set('goal', g.id)} className="tap" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '15px 16px', borderRadius: 16, background: on ? 'var(--ember-soft)' : 'var(--surface)', border: `1px solid ${on ? 'var(--ember-line)' : 'var(--line)'}` }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 800, fontSize: 16, color: on ? 'var(--ember-bright)' : 'var(--text)' }}>{g.label}</div>
+                        <div style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>{g.sub}</div>
+                      </div>
+                      <div style={{ width: 22, height: 22, borderRadius: 99, border: `2px solid ${on ? 'var(--ember)' : 'var(--surface-3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {on && <div style={{ width: 11, height: 11, borderRadius: 99, background: 'var(--ember)' }} />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ height: 18 }} />
+              <Label>Goal weight (kg)</Label>
+              <input className="field" type="number" inputMode="decimal" value={p.goalWeightKg} onChange={e => set('goalWeightKg', e.target.value)} placeholder="76" />
+            </div>
+          )}
+
+          {step === 3 && (
+            <div>
+              <div style={{ marginBottom: 20 }}>
+                <div className="kicker" style={{ marginBottom: 10 }}>Dial it in</div>
+                <div className="h-display" style={{ fontSize: 30, marginBottom: 14 }}>Experience & schedule</div>
+                <div style={{ color: 'var(--muted)', fontSize: 15, fontWeight: 500 }}>So your plan matches your week and your level.</div>
+              </div>
+              <Label>Gym experience</Label>
+              <Segmented options={EXPERIENCE_LEVELS} value={p.experience} onChange={v => set('experience', v)} render={o => o.split(' ')[0]} />
+              <div style={{ height: 16 }} />
+              <Label>Activity level</Label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {ACTIVITY_LEVELS.map(a => <div key={a} onClick={() => set('activity', a)} className={`chip tap${p.activity === a ? ' on' : ''}`}>{a}</div>)}
+              </div>
+              <div style={{ height: 16 }} />
+              <Label>Training days</Label>
+              <div style={{ display: 'flex', gap: 7 }}>
+                {DAYS.map(d => {
+                  const on = p.days.includes(d);
+                  return <div key={d} onClick={() => toggleDay(d)} className="tap" style={{ flex: 1, textAlign: 'center', padding: '12px 0', borderRadius: 12, fontSize: 12, fontWeight: 800, background: on ? 'var(--ember)' : 'var(--surface-2)', color: on ? '#1a0a06' : 'var(--muted)', border: `1px solid ${on ? 'var(--ember)' : 'var(--line)'}` }}>{d[0]}</div>;
+                })}
+              </div>
+              <div style={{ height: 16 }} />
+              <Label>Diet preference</Label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {DIET_PREFS.map(a => <div key={a} onClick={() => set('diet', a)} className={`chip tap${p.diet === a ? ' on' : ''}`}>{a}</div>)}
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (() => {
+            const xp = startXpFor(p.experience);
+            const info = rankForXp(xp);
+            return (
+              <div style={{ textAlign: 'center', paddingTop: 8 }}>
+                <div className="kicker" style={{ marginBottom: 18 }}>Your starting rank</div>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6, animation: 'pop-in .5s ease' }}>
+                  <RankBadge idx={info.idx} size={130} />
+                </div>
+                <div className="h-display" style={{ fontSize: 38, marginTop: 10, color: info.rank.accent }}>{info.rank.name}</div>
+                <div style={{ color: 'var(--muted)', fontSize: 15, fontWeight: 600, maxWidth: 280, margin: '10px auto 0' }}>"{info.rank.tag}"</div>
+                <div className="card" style={{ padding: 16, margin: '24px 4px 0', textAlign: 'left' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)' }}>Progress to {info.next ? info.next.name : 'max'}</span>
+                    <span className="mono" style={{ fontSize: 12, color: 'var(--ember-bright)' }}>{info.toNext > 0 ? `${info.toNext} XP` : 'MAX'}</span>
+                  </div>
+                  <Bar pct={info.pct} />
+                  <div style={{ display: 'flex', gap: 18, marginTop: 16 }}>
+                    <div><div className="num" style={{ fontSize: 22 }}>{p.days.length}<span style={{ fontSize: 13, color: 'var(--muted)' }}> days</span></div><div style={{ fontSize: 11, color: 'var(--faint)', fontWeight: 700 }}>WEEKLY PLAN</div></div>
+                    <div style={{ width: 1, background: 'var(--line)' }} />
+                    <div><div className="num" style={{ fontSize: 22 }}>{GOALS.find(g => g.id === p.goal)?.label.split(' ')[0] || '—'}</div><div style={{ fontSize: 11, color: 'var(--faint)', fontWeight: 700 }}>FOCUS</div></div>
+                  </div>
+                </div>
+                <div style={{ color: 'var(--muted)', fontSize: 13, fontWeight: 500, marginTop: 18 }}>
+                  Earn XP every time you train, log a meal, hit protein or keep a streak. Climb to <b style={{ color: 'var(--text)' }}>Grandmaster Baiter</b>. 🏆 reserved for the worthy.
+                </div>
+              </div>
+            );
+          })()}
+
+        </div>
+      </div>
+
+      {/* Footer button */}
+      <div style={{ padding: '12px 18px 8px' }}>
+        <button onClick={step < 4 ? (canNext() ? () => setStep(s => s + 1) : undefined) : finish} className="btn-primary tap" style={{ width: '100%', padding: '16px', fontSize: 16, opacity: (step < 4 && !canNext()) ? 0.4 : 1, cursor: (step < 4 && !canNext()) ? 'default' : 'pointer' }}>
+          {step === 0 ? 'Get started' : step < 4 ? 'Continue' : 'Enter LockIn'}
+        </button>
+      </div>
+      <div style={{ height: 18 }} />
+    </div>
+  );
+}
+
+function ProfileView() {
+  const router = useRouter();
+  const { profile, setProfile, state } = useApp();
+  if (!profile) return null;
+
+  const info = rankForXp(state.xp);
+  const goalLabel = GOALS.find(g => g.id === profile.goal)?.label || '—';
+  const rows: [string, string][] = [
+    ['Age', profile.age || '—'],
+    ['Height', profile.heightCm ? profile.heightCm + ' cm' : '—'],
+    ['Weight', profile.weightKg ? profile.weightKg + ' kg' : '—'],
+    ['Goal weight', profile.goalWeightKg ? profile.goalWeightKg + ' kg' : '—'],
+  ];
+  const tags: [string, string][] = [
+    ['Goal', goalLabel], ['Experience', profile.experience],
+    ['Activity', profile.activity], ['Diet', profile.diet],
+  ];
+
+  return (
+    <div className="screen-scroll screen-anim">
+      <div className="pad" style={{ paddingTop: 8, paddingBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div className="h-display" style={{ fontSize: 30 }}>Profile</div>
+          <button className="tap" style={{ width: 38, height: 38, borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface-2)', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ICog /></button>
+        </div>
+
+        <div onClick={() => router.push('/achievements')} className="card tap" style={{ padding: 18, marginBottom: 14, textAlign: 'center', position: 'relative', overflow: 'hidden', background: `radial-gradient(120% 120% at 50% 0%, ${info.rank.accent}1f, var(--surface) 60%)` }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}><RankBadge idx={info.idx} size={88} /></div>
+          <div style={{ fontWeight: 800, fontSize: 20, marginTop: 8 }}>{profile.name || 'Athlete'}</div>
+          <div className="h-display" style={{ fontSize: 16, color: info.rank.accent, marginTop: 2 }}>{info.rank.name}</div>
+          <div style={{ marginTop: 14 }}><Bar pct={info.pct} /></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7 }}>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>{state.xp.toLocaleString()} XP</span>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--faint)' }}>{info.toNext > 0 ? `${info.toNext.toLocaleString()} to ${info.next!.name}` : 'MAX'}</span>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '4px 16px', marginBottom: 14 }}>
+          {rows.map(([k, v], i) => (
+            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '13px 0', borderTop: i ? '1px solid var(--line)' : 'none' }}>
+              <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 14.5 }}>{k}</span>
+              <span style={{ fontWeight: 800, fontSize: 14.5 }}>{v}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9, marginBottom: 14 }}>
+          {tags.map(([k, v]) => (
+            <div key={k} className="card" style={{ padding: '10px 14px' }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--faint)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{k}</div>
+              <div style={{ fontWeight: 800, fontSize: 14, marginTop: 2 }}>{v}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div className="kicker" style={{ marginBottom: 8, paddingLeft: 2 }}>Training days</div>
+          <div style={{ display: 'flex', gap: 7 }}>
+            {DAYS.map(d => {
+              const on = (profile.days || []).includes(d);
+              return <div key={d} style={{ flex: 1, textAlign: 'center', padding: '11px 0', borderRadius: 11, fontSize: 12, fontWeight: 800, background: on ? 'var(--ember)' : 'var(--surface-2)', color: on ? '#1a0a06' : 'var(--faint)', border: `1px solid ${on ? 'var(--ember)' : 'var(--line)'}` }}>{d[0]}</div>;
+            })}
+          </div>
+        </div>
+
+        <button onClick={() => setProfile(null)} className="btn-ghost tap" style={{ width: '100%', padding: 14, fontSize: 14 }}>
+          Replay onboarding
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function ProfilePage() {
-  const router = useRouter();
-  const [step, setStep] = useState<Step>('basics');
-  const [form, setForm] = useState<FormState>(defaultForm);
-  const [existingProfile, setExistingProfile] = useState<UserProfile | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const { profile, setProfile, setState } = useApp();
 
-  useEffect(() => {
-    const p = getProfile();
-    if (p?.setupComplete) {
-      setExistingProfile(p);
-      setIsEditing(true);
-      const totalIn = p.heightCm / 2.54;
-      setForm({
-        name: p.name,
-        age: String(p.age),
-        gender: p.gender,
-        heightFt: String(Math.floor(totalIn / 12)),
-        heightIn: String(Math.round(totalIn % 12)),
-        weightLbs: String(p.weightLbs),
-        goalWeightLbs: String(p.goalWeightLbs),
-        fitnessGoal: p.fitnessGoal,
-        activityLevel: p.activityLevel,
-        gymExperience: p.gymExperience,
-        preferredDays: String(p.preferredDays),
-        equipment: p.equipment,
-        injuries: p.injuries,
-        dietPreference: p.dietPreference,
-      });
-    }
-  }, []);
+  const handleComplete = (p: Profile) => {
+    setProfile(p);
+    setState({ ...DEMO_STATE, xp: p._startXp });
+  };
 
-  const set = (key: keyof FormState, value: string) =>
-    setForm((f) => ({ ...f, [key]: value }));
-
-  const stepIdx = STEPS.indexOf(step);
-
-  function next() {
-    if (stepIdx < STEPS.length - 1) setStep(STEPS[stepIdx + 1]);
-    else saveAndFinish();
-  }
-
-  function back() {
-    if (stepIdx > 0) setStep(STEPS[stepIdx - 1]);
-  }
-
-  function saveAndFinish() {
-    const heightCm = (parseInt(form.heightFt) * 12 + parseInt(form.heightIn)) * 2.54;
-    const weightLbs = parseFloat(form.weightLbs);
-    const age = parseInt(form.age);
-
-    const bmr = calcBMR(weightLbs, heightCm, age, form.gender);
-    const tdee = calcTDEE(bmr, form.activityLevel);
-    const calorieGoal = calcCalorieGoal(tdee, form.fitnessGoal);
-    const { proteinG, carbsG, fatG } = calcMacroGoals(calorieGoal, form.fitnessGoal, weightLbs);
-    const waterOz = calcWaterGoal(weightLbs, form.activityLevel);
-
-    const profile: UserProfile = {
-      name: form.name || 'Athlete',
-      age,
-      gender: form.gender,
-      heightCm: Math.round(heightCm * 10) / 10,
-      weightLbs,
-      goalWeightLbs: parseFloat(form.goalWeightLbs),
-      fitnessGoal: form.fitnessGoal,
-      activityLevel: form.activityLevel,
-      gymExperience: form.gymExperience,
-      preferredDays: parseInt(form.preferredDays),
-      equipment: form.equipment,
-      injuries: form.injuries,
-      dietPreference: form.dietPreference,
-      dailyCalorieGoal: calorieGoal,
-      dailyProteinGoal: proteinG,
-      dailyCarbGoal: carbsG,
-      dailyFatGoal: fatG,
-      dailyWaterOz: waterOz,
-      setupComplete: true,
-      createdAt: existingProfile?.createdAt ?? new Date().toISOString(),
-    };
-
-    saveProfile(profile);
-
-    // Sync starting weight if new user
-    if (!existingProfile) {
-      const { saveWeightEntry } = require('@/lib/storage');
-      saveWeightEntry({ date: todayStr(), weightLbs, notes: 'Starting weight' });
-    }
-
-    setSaved(true);
-    setTimeout(() => router.push('/'), 1200);
-  }
-
-  if (saved) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-4 px-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
-          <Check size={32} className="text-emerald-400" />
-        </div>
-        <h2 className="text-xl font-bold text-white">Profile Saved!</h2>
-        <p className="text-slate-400 text-sm">Taking you to your dashboard…</p>
-      </div>
-    );
-  }
-
-  if (isEditing && !saved) {
-    return <EditView form={form} set={set} profile={existingProfile!} onSave={saveAndFinish} />;
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Progress bar */}
-      <div className="px-4 pt-6 pb-4">
-        <div className="flex items-center justify-between mb-2">
-          <h1 className="text-xl font-bold text-white">Set Up Profile</h1>
-          <span className="text-sm text-slate-400">{stepIdx + 1} / {STEPS.length}</span>
-        </div>
-        <div className="flex gap-1.5">
-          {STEPS.map((s, i) => (
-            <div
-              key={s}
-              className="flex-1 h-1.5 rounded-full transition-colors"
-              style={{ background: i <= stepIdx ? '#06b6d4' : '#1e293b' }}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-4">
-        {step === 'basics' && <BasicsStep form={form} set={set} />}
-        {step === 'body' && <BodyStep form={form} set={set} />}
-        {step === 'goals' && <GoalsStep form={form} set={set} />}
-        {step === 'experience' && <ExperienceStep form={form} set={set} />}
-        {step === 'diet' && <DietStep form={form} set={set} />}
-      </div>
-
-      {/* Navigation */}
-      <div className="px-4 pb-6 flex gap-3">
-        {stepIdx > 0 && (
-          <Button variant="secondary" onClick={back} className="flex items-center gap-1">
-            <ChevronLeft size={16} /> Back
-          </Button>
-        )}
-        <Button
-          variant="primary"
-          fullWidth
-          onClick={next}
-          className="flex items-center justify-center gap-1"
-        >
-          {stepIdx === STEPS.length - 1 ? (
-            <>Save Profile <Check size={16} /></>
-          ) : (
-            <>Next <ChevronRight size={16} /></>
-          )}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Steps ────────────────────────────────────────────────────────────────────
-
-function BasicsStep({ form, set }: { form: FormState; set: (k: keyof FormState, v: string) => void }) {
-  return (
-    <div className="space-y-4 fade-up">
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-2">
-          <User size={15} /> What's your name?
-        </label>
-        <input
-          type="text"
-          placeholder="e.g. Ammar"
-          value={form.name}
-          onChange={(e) => set('name', e.target.value)}
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1.5">Age</label>
-        <input
-          type="number"
-          placeholder="e.g. 22"
-          value={form.age}
-          onChange={(e) => set('age', e.target.value)}
-          inputMode="numeric"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">Gender</label>
-        <div className="grid grid-cols-3 gap-2">
-          {(['male', 'female', 'other'] as Gender[]).map((g) => (
-            <button
-              key={g}
-              onClick={() => set('gender', g)}
-              className="py-3 rounded-2xl text-sm font-medium transition-all capitalize"
-              style={{
-                background: form.gender === g ? 'rgba(6,182,212,0.15)' : '#111827',
-                border: `1px solid ${form.gender === g ? '#06b6d4' : 'rgba(255,255,255,0.08)'}`,
-                color: form.gender === g ? '#06b6d4' : '#94a3b8',
-              }}
-            >
-              {g}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BodyStep({ form, set }: { form: FormState; set: (k: keyof FormState, v: string) => void }) {
-  return (
-    <div className="space-y-4 fade-up">
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1.5">Height</label>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="relative">
-            <input type="number" value={form.heightFt} onChange={(e) => set('heightFt', e.target.value)} inputMode="numeric" />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">ft</span>
-          </div>
-          <div className="relative">
-            <input type="number" value={form.heightIn} onChange={(e) => set('heightIn', e.target.value)} inputMode="numeric" />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">in</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1.5">Current Weight</label>
-        <div className="relative">
-          <input
-            type="number"
-            placeholder="175"
-            value={form.weightLbs}
-            onChange={(e) => set('weightLbs', e.target.value)}
-            inputMode="decimal"
-          />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">lbs</span>
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1.5">Goal Weight</label>
-        <div className="relative">
-          <input
-            type="number"
-            placeholder="160"
-            value={form.goalWeightLbs}
-            onChange={(e) => set('goalWeightLbs', e.target.value)}
-            inputMode="decimal"
-          />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">lbs</span>
-        </div>
-      </div>
-
-      <Card style={{ background: 'rgba(6,182,212,0.04)', borderColor: 'rgba(6,182,212,0.12)' }}>
-        <p className="text-xs text-slate-400 leading-relaxed">
-          We'll use your weight and height to calculate your calorie and macro targets automatically using the Mifflin-St Jeor formula.
-        </p>
-      </Card>
-    </div>
-  );
-}
-
-function GoalsStep({ form, set }: { form: FormState; set: (k: keyof FormState, v: string) => void }) {
-  return (
-    <div className="space-y-4 fade-up">
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2 flex items-center gap-2">
-          <Target size={15} /> Your primary goal?
-        </label>
-        <div className="space-y-2">
-          {GOAL_OPTIONS.map((g) => (
-            <button
-              key={g.value}
-              onClick={() => set('fitnessGoal', g.value)}
-              className="w-full flex items-center gap-3 p-3.5 rounded-2xl text-left transition-all"
-              style={{
-                background: form.fitnessGoal === g.value ? 'rgba(6,182,212,0.12)' : '#0d1422',
-                border: `1px solid ${form.fitnessGoal === g.value ? '#06b6d4' : 'rgba(255,255,255,0.06)'}`,
-              }}
-            >
-              <span className="text-2xl">{g.emoji}</span>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-white">{g.label}</p>
-                <p className="text-xs text-slate-400 mt-0.5">{g.desc}</p>
-              </div>
-              {form.fitnessGoal === g.value && <Check size={18} className="text-cyan-400 flex-shrink-0" />}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">Activity Level</label>
-        <div className="space-y-1.5">
-          {ACTIVITY_OPTIONS.map((a) => (
-            <button
-              key={a.value}
-              onClick={() => set('activityLevel', a.value)}
-              className="w-full flex items-center justify-between p-3 rounded-xl transition-all"
-              style={{
-                background: form.activityLevel === a.value ? 'rgba(168,85,247,0.12)' : '#111827',
-                border: `1px solid ${form.activityLevel === a.value ? '#a855f7' : 'rgba(255,255,255,0.06)'}`,
-              }}
-            >
-              <div className="text-left">
-                <p className="text-sm font-medium text-white">{a.label}</p>
-                <p className="text-xs text-slate-400">{a.desc}</p>
-              </div>
-              {form.activityLevel === a.value && <Check size={16} className="text-purple-400" />}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ExperienceStep({ form, set }: { form: FormState; set: (k: keyof FormState, v: string) => void }) {
-  return (
-    <div className="space-y-5 fade-up">
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2 flex items-center gap-2">
-          <Dumbbell size={15} /> Gym experience?
-        </label>
-        <div className="grid grid-cols-3 gap-2">
-          {EXPERIENCE_OPTIONS.map((e) => (
-            <button
-              key={e.value}
-              onClick={() => set('gymExperience', e.value)}
-              className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all"
-              style={{
-                background: form.gymExperience === e.value ? 'rgba(6,182,212,0.12)' : '#0d1422',
-                border: `1px solid ${form.gymExperience === e.value ? '#06b6d4' : 'rgba(255,255,255,0.06)'}`,
-              }}
-            >
-              <span className="text-2xl">{e.emoji}</span>
-              <span className="text-xs font-medium text-slate-300">{e.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">Available equipment?</label>
-        <div className="grid grid-cols-3 gap-2">
-          {EQUIPMENT_OPTIONS.map((e) => (
-            <button
-              key={e.value}
-              onClick={() => set('equipment', e.value)}
-              className="flex flex-col items-center gap-2 py-4 rounded-2xl transition-all"
-              style={{
-                background: form.equipment === e.value ? 'rgba(168,85,247,0.12)' : '#0d1422',
-                border: `1px solid ${form.equipment === e.value ? '#a855f7' : 'rgba(255,255,255,0.06)'}`,
-              }}
-            >
-              <span className="text-2xl">{e.emoji}</span>
-              <span className="text-xs font-medium text-slate-300">{e.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1.5">
-          Days per week you can train?
-        </label>
-        <div className="flex gap-2">
-          {[2, 3, 4, 5, 6].map((d) => (
-            <button
-              key={d}
-              onClick={() => set('preferredDays', String(d))}
-              className="flex-1 py-3 rounded-xl text-sm font-bold transition-all"
-              style={{
-                background: form.preferredDays === String(d) ? '#06b6d4' : '#111827',
-                color: form.preferredDays === String(d) ? '#fff' : '#64748b',
-                border: `1px solid ${form.preferredDays === String(d) ? '#06b6d4' : 'rgba(255,255,255,0.06)'}`,
-              }}
-            >
-              {d}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-1.5">
-          Injuries or limitations? <span className="text-slate-500">(optional)</span>
-        </label>
-        <textarea
-          placeholder="e.g. bad left knee, shoulder impingement..."
-          value={form.injuries}
-          onChange={(e) => set('injuries', e.target.value)}
-          rows={3}
-          style={{ resize: 'none' }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function DietStep({ form, set }: { form: FormState; set: (k: keyof FormState, v: string) => void }) {
-  const diets = ['None / Everything', 'Vegetarian', 'Vegan', 'Keto', 'Low-carb', 'Intermittent Fasting', 'Halal', 'Gluten-free'];
-
-  return (
-    <div className="space-y-4 fade-up">
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">Diet preference?</label>
-        <div className="grid grid-cols-2 gap-2">
-          {diets.map((d) => (
-            <button
-              key={d}
-              onClick={() => set('dietPreference', d)}
-              className="py-3 px-3 rounded-xl text-sm font-medium text-left transition-all"
-              style={{
-                background: form.dietPreference === d ? 'rgba(16,185,129,0.12)' : '#111827',
-                border: `1px solid ${form.dietPreference === d ? '#10b981' : 'rgba(255,255,255,0.06)'}`,
-                color: form.dietPreference === d ? '#10b981' : '#94a3b8',
-              }}
-            >
-              {d}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <Card style={{ background: 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.15)' }}>
-        <p className="text-xs font-semibold text-amber-400 mb-1">Your calorie targets will be calculated as:</p>
-        <p className="text-xs text-slate-300 leading-relaxed">
-          Based on the Mifflin-St Jeor equation + your activity level and goal. You can always adjust these manually on your profile.
-        </p>
-      </Card>
-    </div>
-  );
-}
-
-// ─── Edit View (for existing users) ──────────────────────────────────────────
-
-function EditView({
-  form, set, profile, onSave,
-}: {
-  form: FormState;
-  set: (k: keyof FormState, v: string) => void;
-  profile: UserProfile;
-  onSave: () => void;
-}) {
-  const latestWeight = getLatestWeight();
-
-  return (
-    <div className="px-4 pt-6 pb-6 space-y-5 fade-up">
-      <div className="flex items-center gap-3">
-        <div className="w-14 h-14 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-2xl">
-          💪
-        </div>
-        <div>
-          <h1 className="text-xl font-bold text-white">{profile.name}</h1>
-          <p className="text-sm text-slate-400">{profile.fitnessGoal.replace(/_/g, ' ')} · {profile.gymExperience}</p>
-        </div>
-      </div>
-
-      {/* Stats summary */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="text-center py-3">
-          <div className="text-lg font-bold text-cyan-400">{profile.weightLbs}</div>
-          <div className="text-[11px] text-slate-400">lbs</div>
-        </Card>
-        <Card className="text-center py-3">
-          <div className="text-lg font-bold text-purple-400">{profile.dailyCalorieGoal}</div>
-          <div className="text-[11px] text-slate-400">kcal goal</div>
-        </Card>
-        <Card className="text-center py-3">
-          <div className="text-lg font-bold text-emerald-400">{profile.preferredDays}d</div>
-          <div className="text-[11px] text-slate-400">per week</div>
-        </Card>
-      </div>
-
-      {/* Editable fields */}
-      <Card>
-        <h2 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-          <Settings size={15} className="text-slate-400" /> Profile Settings
-        </h2>
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Name</label>
-            <input value={form.name} onChange={(e) => set('name', e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Current Weight (lbs)</label>
-            <input type="number" value={form.weightLbs} onChange={(e) => set('weightLbs', e.target.value)} inputMode="decimal" />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Goal Weight (lbs)</label>
-            <input type="number" value={form.goalWeightLbs} onChange={(e) => set('goalWeightLbs', e.target.value)} inputMode="decimal" />
-          </div>
-        </div>
-      </Card>
-
-      <Card>
-        <h2 className="text-sm font-semibold text-white mb-3">Daily Goals (Auto-calculated)</h2>
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div className="flex justify-between"><span className="text-slate-400">Calories</span><span className="text-white font-medium">{profile.dailyCalorieGoal} kcal</span></div>
-          <div className="flex justify-between"><span className="text-slate-400">Protein</span><span className="text-white font-medium">{profile.dailyProteinGoal}g</span></div>
-          <div className="flex justify-between"><span className="text-slate-400">Carbs</span><span className="text-white font-medium">{profile.dailyCarbGoal}g</span></div>
-          <div className="flex justify-between"><span className="text-slate-400">Fat</span><span className="text-white font-medium">{profile.dailyFatGoal}g</span></div>
-          <div className="flex justify-between"><span className="text-slate-400">Water</span><span className="text-white font-medium">{profile.dailyWaterOz} oz</span></div>
-        </div>
-      </Card>
-
-      <Button variant="primary" fullWidth onClick={onSave} size="lg">
-        Save Changes
-      </Button>
-    </div>
-  );
+  if (!profile) return <Onboarding onComplete={handleComplete} />;
+  return <ProfileView />;
 }

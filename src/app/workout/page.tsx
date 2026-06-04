@@ -1,596 +1,237 @@
 'use client';
-
 import { useState, useEffect } from 'react';
-import { Plus, Dumbbell, Clock, Zap, ChevronDown, ChevronUp, Trash2, Check, X, Play, Square } from 'lucide-react';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
-import Modal from '@/components/ui/Modal';
-import { getWorkouts, saveWorkout, deleteWorkout, getGameStats, saveGameStats, todayStr, generateId } from '@/lib/storage';
-import { calcWorkoutXP, checkAchievements } from '@/lib/gamification';
-import type { WorkoutSession, LoggedExercise, ExerciseSet, CardioLog } from '@/types';
+import { useRouter } from 'next/navigation';
+import { useApp } from '@/contexts/AppContext';
+import { EXERCISES, MUSCLE_LABELS, type Exercise } from '@/data/exercises';
+import Sheet from '@/components/ui/Sheet';
 
-const QUICK_EXERCISES = [
-  'Bench Press', 'Squat', 'Deadlift', 'Overhead Press', 'Pull-up',
-  'Lat Pulldown', 'Cable Row', 'Incline Press', 'Leg Press', 'Romanian Deadlift',
-  'Bicep Curl', 'Tricep Pushdown', 'Lateral Raise', 'Face Pull', 'Plank',
-  'Treadmill', 'Elliptical', 'Rowing Machine', 'Stationary Bike',
+// ── Icons ────────────────────────────────────────────────────
+const IClose = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>;
+const ICheck = () => <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 6.5"/></svg>;
+const IPlus = () => <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>;
+const IClock = () => <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>;
+const IDumbbell = () => <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 8.5v7M3.5 10v4M17.5 8.5v7M20.5 10v4M6.5 12h11"/></svg>;
+const ISearch = () => <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.6-3.6"/></svg>;
+const IFlame = () => <svg width={46} height={46} viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2.5c.5 3-2 4.2-2 6.5 0 1.1.8 2 1.8 2 1.4 0 1.7-1.2 1.4-2.4 1.7 1 2.8 2.7 2.8 4.9A6 6 0 0 1 6 13.6c0-2.4 1.4-3.6 2.6-5C10 7.3 11 5.4 12 2.5z"/></svg>;
+const IBolt = () => <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2L4.5 13.2H11l-1.6 8.8L20 10.4h-6.5z"/></svg>;
+
+function fmtTime(s: number) {
+  const m = Math.floor(s / 60), ss = s % 60;
+  return `${m}:${String(ss).padStart(2, '0')}`;
+}
+
+interface SetRow { w: string; r: string; done: boolean; }
+interface SessionItem { ex: Exercise; sets: SetRow[]; notes: string; cardio: Record<string, string>; }
+
+const PUSH_SEED = [
+  { id: 'chest-press', sets: [{ w: '45', r: '12', done: false }, { w: '50', r: '10', done: false }, { w: '50', r: '8', done: false }] },
+  { id: 'ohp',         sets: [{ w: '18', r: '10', done: false }, { w: '18', r: '9',  done: false }, { w: '20', r: '7', done: false }] },
+  { id: 'pushdown',    sets: [{ w: '25', r: '15', done: false }, { w: '27', r: '12', done: false }, { w: '27', r: '11', done: false }] },
 ];
 
-type WorkoutState = 'idle' | 'active' | 'done';
-
 export default function WorkoutPage() {
-  const [state, setState] = useState<WorkoutState>('idle');
-  const [session, setSession] = useState<WorkoutSession | null>(null);
-  const [history, setHistory] = useState<WorkoutSession[]>([]);
-  const [showExerciseModal, setShowExerciseModal] = useState(false);
-  const [showNameModal, setShowNameModal] = useState(false);
-  const [workoutName, setWorkoutName] = useState('');
-  const [customExercise, setCustomExercise] = useState('');
-  const [exerciseType, setExerciseType] = useState<'strength' | 'cardio'>('strength');
-  const [startTime, setStartTime] = useState<number>(0);
+  const router = useRouter();
+  const { state, setState, toast } = useApp();
+
+  const [session, setSession] = useState<SessionItem[]>(() =>
+    PUSH_SEED.map(s => {
+      const ex = EXERCISES.find(e => e.id === s.id)!;
+      return { ex, sets: s.sets.map(x => ({ ...x })), notes: '', cardio: {} };
+    })
+  );
   const [elapsed, setElapsed] = useState(0);
-  const [xpEarned, setXpEarned] = useState(0);
+  const [rest, setRest] = useState(0);
+  const [pickOpen, setPickOpen] = useState(false);
+  const [pickQ, setPickQ] = useState('');
+  const [finishOpen, setFinishOpen] = useState(false);
 
   useEffect(() => {
-    setHistory(getWorkouts().slice(0, 20));
+    const t = setInterval(() => setElapsed(e => e + 1), 1000);
+    return () => clearInterval(t);
   }, []);
 
   useEffect(() => {
-    if (state !== 'active') return;
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
-    return () => clearInterval(id);
-  }, [state, startTime]);
+    if (rest <= 0) return;
+    const t = setInterval(() => setRest(r => r <= 1 ? 0 : r - 1), 1000);
+    return () => clearInterval(t);
+  }, [rest > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function startWorkout() {
-    const newSession: WorkoutSession = {
-      id: generateId(),
-      date: todayStr(),
-      name: workoutName || `Workout — ${new Date().toLocaleDateString('en-US', { weekday: 'long' })}`,
-      exercises: [],
-      durationMin: 0,
-      notes: '',
-      xpEarned: 0,
-      completed: false,
-    };
-    setSession(newSession);
-    setStartTime(Date.now());
-    setState('active');
-    setShowNameModal(false);
-  }
-
-  function addExercise(name: string) {
-    if (!session) return;
-    const exercise: LoggedExercise = {
-      id: generateId(),
-      name,
-      type: exerciseType,
-      sets: exerciseType === 'strength' ? [{ reps: 10, weightLbs: 0, restSec: 90, completed: false }] : undefined,
-      cardio: exerciseType === 'cardio' ? { equipment: name, durationMin: 20 } : undefined,
-      notes: '',
-      difficulty: 3,
-      muscleGroups: [],
-    };
-    setSession((s) => s ? { ...s, exercises: [...s.exercises, exercise] } : s);
-    setShowExerciseModal(false);
-    setCustomExercise('');
-  }
-
-  function updateSet(exIdx: number, setIdx: number, field: keyof ExerciseSet, value: string | boolean) {
-    setSession((s) => {
-      if (!s) return s;
-      const exercises = s.exercises.map((ex, i) => {
-        if (i !== exIdx || !ex.sets) return ex;
-        const sets = ex.sets.map((set, j) => {
-          if (j !== setIdx) return set;
-          return { ...set, [field]: typeof value === 'boolean' ? value : parseFloat(value) || 0 };
-        });
-        return { ...ex, sets };
-      });
-      return { ...s, exercises };
+  const update = (fn: (n: SessionItem[]) => void) =>
+    setSession(s => {
+      const n = s.map(e => ({ ...e, sets: e.sets.map(x => ({ ...x })), cardio: { ...e.cardio } }));
+      fn(n); return n;
     });
-  }
 
-  function addSet(exIdx: number) {
-    setSession((s) => {
-      if (!s) return s;
-      const exercises = s.exercises.map((ex, i) => {
-        if (i !== exIdx || !ex.sets) return ex;
-        const lastSet = ex.sets[ex.sets.length - 1];
-        return { ...ex, sets: [...ex.sets, { ...lastSet, completed: false }] };
-      });
-      return { ...s, exercises };
-    });
-  }
+  const setField = (ei: number, si: number, k: 'w' | 'r', v: string) =>
+    update(n => { n[ei].sets[si][k] = v; });
+  const toggleDone = (ei: number, si: number) =>
+    update(n => { const cur = n[ei].sets[si].done; n[ei].sets[si].done = !cur; if (!cur) setRest(90); });
+  const addSet = (ei: number) =>
+    update(n => { const last = n[ei].sets[n[ei].sets.length - 1] || { w: '0', r: '10' }; n[ei].sets.push({ w: last.w, r: last.r, done: false }); });
+  const setCardio = (ei: number, k: string, v: string) =>
+    update(n => { n[ei].cardio[k] = v; });
+  const setNotes = (ei: number, v: string) =>
+    update(n => { n[ei].notes = v; });
+  const addExercise = (ex: Exercise) => {
+    setSession(s => [...s, { ex, sets: ex.type === 'cardio' ? [] : [{ w: '0', r: '10', done: false }], notes: '', cardio: {} }]);
+    setPickOpen(false); setPickQ('');
+  };
+  const removeExercise = (ei: number) => setSession(s => s.filter((_, i) => i !== ei));
 
-  function removeExercise(exIdx: number) {
-    setSession((s) => s ? { ...s, exercises: s.exercises.filter((_, i) => i !== exIdx) } : s);
-  }
+  const doneSets = session.reduce((a, e) => a + e.sets.filter(x => x.done).length, 0);
+  const totalSets = session.reduce((a, e) => a + e.sets.length, 0);
+  const volume = session.reduce((a, e) => a + e.sets.filter(x => x.done).reduce((b, x) => b + (parseFloat(x.w) || 0) * (parseInt(x.r) || 0), 0), 0);
+  const xpEarned = 180 + doneSets * 15;
 
-  function updateCardio(exIdx: number, field: keyof CardioLog, value: string) {
-    setSession((s) => {
-      if (!s) return s;
-      const exercises = s.exercises.map((ex, i) => {
-        if (i !== exIdx || !ex.cardio) return ex;
-        return { ...ex, cardio: { ...ex.cardio, [field]: parseFloat(value) || 0 } };
-      });
-      return { ...s, exercises };
-    });
-  }
+  const finish = () => {
+    setState(st => ({ ...st, xp: st.xp + xpEarned, todayWorkout: { ...st.todayWorkout, done: true } }));
+    setFinishOpen(true);
+  };
+  const closeFinish = () => { router.back(); toast(`🔥 +${xpEarned} XP · Workout logged`); };
 
-  function finishWorkout() {
-    if (!session) return;
-    const durationMin = Math.round(elapsed / 60);
-    const totalSets = session.exercises.reduce((acc, ex) => acc + (ex.sets?.length ?? 0), 0);
-    const hasCardio = session.exercises.some((ex) => ex.type === 'cardio');
-    const xp = calcWorkoutXP(session.exercises.length, totalSets, hasCardio);
+  const picks = EXERCISES.filter(e => !pickQ || e.name.toLowerCase().includes(pickQ.toLowerCase()));
+  const title = state.todayWorkout.name;
 
-    const completed = {
-      ...session,
-      durationMin,
-      xpEarned: xp,
-      completed: true,
-    };
+  return (
+    <div className="app-root" style={{ position: 'fixed', inset: 0, zIndex: 5 }}>
+      <div style={{ height: 52 }} />
 
-    saveWorkout(completed);
-
-    const gameStats = getGameStats();
-    const today = todayStr();
-    const isNewStreak = gameStats.lastWorkoutDate !== today;
-    const newStreak = isNewStreak ? gameStats.streak + 1 : gameStats.streak;
-    const updatedStats = {
-      ...gameStats,
-      xp: gameStats.xp + xp,
-      streak: newStreak,
-      lastWorkoutDate: today,
-      lastActiveDate: today,
-      totalWorkouts: gameStats.totalWorkouts + 1,
-      achievements: checkAchievements(
-        gameStats.achievements,
-        gameStats.totalWorkouts + 1,
-        newStreak,
-        gameStats.xp + xp,
-        gameStats.totalMealsLogged,
-        gameStats.totalWeighIns,
-      ),
-    };
-    saveGameStats(updatedStats);
-
-    setXpEarned(xp);
-    setSession(completed);
-    setState('done');
-    setHistory((h) => [completed, ...h]);
-  }
-
-  function fmtTime(sec: number) {
-    const m = Math.floor(sec / 60).toString().padStart(2, '0');
-    const s = (sec % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  }
-
-  // ── Done screen ──────────────────────────────────────────────────────────
-  if (state === 'done' && session) {
-    return (
-      <div className="fade-up px-4 pt-8 pb-6 flex flex-col items-center gap-5 text-center">
-        <div className="text-6xl">🎉</div>
-        <h1 className="text-2xl font-black text-white">Workout Complete!</h1>
-        <div className="grid grid-cols-3 gap-3 w-full">
-          <Card className="text-center py-3">
-            <div className="text-xl font-black text-cyan-400">{fmtTime(elapsed)}</div>
-            <div className="text-[11px] text-slate-400">Duration</div>
-          </Card>
-          <Card className="text-center py-3">
-            <div className="text-xl font-black text-purple-400">{session.exercises.length}</div>
-            <div className="text-[11px] text-slate-400">Exercises</div>
-          </Card>
-          <Card className="text-center py-3 glow-amber">
-            <div className="text-xl font-black text-amber-400">+{xpEarned}</div>
-            <div className="text-[11px] text-slate-400">XP</div>
-          </Card>
-        </div>
-        <Button
-          variant="primary"
-          fullWidth
-          size="lg"
-          onClick={() => { setState('idle'); setSession(null); setElapsed(0); }}
-        >
-          Back to Workouts
-        </Button>
-      </div>
-    );
-  }
-
-  // ── Active workout ────────────────────────────────────────────────────────
-  if (state === 'active' && session) {
-    return (
-      <div className="flex flex-col h-full">
-        {/* Header */}
-        <div className="px-4 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div>
-            <h1 className="text-base font-bold text-white leading-tight">{session.name}</h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <Clock size={13} className="text-cyan-400" />
-              <span className="text-sm text-cyan-400 font-mono font-bold">{fmtTime(elapsed)}</span>
-              <span className="text-xs text-slate-500">· {session.exercises.length} exercises</span>
-            </div>
+      {/* Top bar */}
+      <div style={{ padding: '6px 16px 12px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid var(--line)' }}>
+        <button onClick={() => router.back()} className="tap" style={{ width: 38, height: 38, borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface-2)', color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><IClose /></button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 1 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 99, background: 'var(--ember)', boxShadow: '0 0 6px var(--ember)' }} />
+            <span className="mono" style={{ fontSize: 13, color: 'var(--ember-bright)', fontWeight: 700 }}>{fmtTime(elapsed)}</span>
+            <span style={{ fontSize: 12, color: 'var(--faint)', fontWeight: 700 }}>· {doneSets}/{totalSets} sets</span>
           </div>
-          <Button variant="success" size="sm" onClick={finishWorkout} className="flex items-center gap-1">
-            <Check size={14} /> Finish
-          </Button>
         </div>
+        <button onClick={finish} className="btn-primary tap" style={{ padding: '10px 16px', fontSize: 14, flexShrink: 0 }}>Finish</button>
+      </div>
 
-        {/* Exercise list */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-          {session.exercises.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
-              <Dumbbell size={32} className="text-slate-600" />
-              <p className="text-slate-400 text-sm">No exercises yet. Add your first one!</p>
+      <div className="screen-scroll" style={{ paddingTop: 14, paddingBottom: rest > 0 ? 92 : 24 }}>
+        <div className="pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {session.map((item, ei) => {
+            const ex = item.ex;
+            const isCardio = ex.type === 'cardio';
+            return (
+              <div key={ei + ex.id} className="card" style={{ padding: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, background: 'var(--ember-soft)', color: 'var(--ember)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {isCardio ? <IClock /> : <IDumbbell />}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 15.5, lineHeight: 1.15 }}>{ex.name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, marginTop: 2 }}>{ex.targets.map(m => MUSCLE_LABELS[m]).join(' · ')}</div>
+                  </div>
+                  <button onClick={() => removeExercise(ei)} className="tap" style={{ width: 30, height: 30, borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'var(--faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><IClose /></button>
+                </div>
+
+                {isCardio ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    {[['incline', 'Incline', '%'], ['speed', 'Speed', 'km/h'], ['mins', 'Duration', 'min'], ['distance', 'Distance', 'km'], ['kcal', 'Calories', 'kcal']].map(([k, l, u]) => (
+                      <div key={k}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--faint)', letterSpacing: '0.04em', marginBottom: 6, textTransform: 'uppercase' }}>{l}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input value={item.cardio[k] || ''} inputMode="decimal" placeholder="—" onChange={e => setCardio(ei, k, e.target.value)} style={{ flex: 1, minWidth: 0, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 10, color: 'var(--text)', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17, padding: '9px 10px', outline: 'none' }} />
+                          <span style={{ fontSize: 11, color: 'var(--faint)', fontWeight: 700, flexShrink: 0 }}>{u}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr 1fr 44px', gap: 8, alignItems: 'center', fontSize: 10, fontWeight: 800, color: 'var(--faint)', letterSpacing: '0.06em', marginBottom: 8, paddingLeft: 2 }}>
+                      <span>SET</span><span style={{ textAlign: 'center' }}>KG</span><span style={{ textAlign: 'center' }}>REPS</span><span />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {item.sets.map((st, si) => (
+                        <div key={si} style={{ display: 'grid', gridTemplateColumns: '30px 1fr 1fr 44px', gap: 8, alignItems: 'center', opacity: st.done ? 0.96 : 1 }}>
+                          <span className="num" style={{ fontSize: 15, color: st.done ? 'var(--ember-bright)' : 'var(--muted)', paddingLeft: 4 }}>{si + 1}</span>
+                          <div style={{ display: 'flex', justifyContent: 'center' }}>
+                            <input value={st.w} inputMode="decimal" onChange={e => setField(ei, si, 'w', e.target.value)} style={{ width: '100%', textAlign: 'center', background: st.done ? 'var(--ember-soft)' : 'var(--surface-2)', border: `1px solid ${st.done ? 'var(--ember-line)' : 'var(--line)'}`, borderRadius: 10, color: 'var(--text)', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17, padding: '9px 4px', outline: 'none' }} />
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'center' }}>
+                            <input value={st.r} inputMode="numeric" onChange={e => setField(ei, si, 'r', e.target.value)} style={{ width: '100%', textAlign: 'center', background: st.done ? 'var(--ember-soft)' : 'var(--surface-2)', border: `1px solid ${st.done ? 'var(--ember-line)' : 'var(--line)'}`, borderRadius: 10, color: 'var(--text)', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17, padding: '9px 4px', outline: 'none' }} />
+                          </div>
+                          <button onClick={() => toggleDone(ei, si)} className="tap" style={{ width: 40, height: 40, borderRadius: 11, justifySelf: 'center', border: st.done ? 'none' : '1px solid var(--line)', background: st.done ? 'var(--ember)' : 'var(--surface-2)', color: st.done ? '#1a0a06' : 'var(--faint)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ICheck /></button>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={() => addSet(ei)} className="tap" style={{ marginTop: 10, width: '100%', padding: 10, borderRadius: 11, border: '1px dashed var(--line-strong)', background: 'transparent', color: 'var(--muted)', fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><IPlus /> Add set</button>
+                  </div>
+                )}
+
+                <input value={item.notes} onChange={e => setNotes(ei, e.target.value)} placeholder="Notes — felt strong, bump weight next time…" style={{ width: '100%', marginTop: 12, background: 'transparent', border: 'none', borderTop: '1px solid var(--line)', color: 'var(--text)', fontFamily: 'var(--font-ui)', fontSize: 13, fontWeight: 500, padding: '12px 2px 0', outline: 'none' }} />
+              </div>
+            );
+          })}
+
+          <button onClick={() => setPickOpen(true)} className="btn-ghost tap" style={{ width: '100%', padding: 15, fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <IPlus /> Add exercise
+          </button>
+        </div>
+      </div>
+
+      {/* Rest timer */}
+      {rest > 0 && (
+        <div style={{ position: 'absolute', left: 14, right: 14, bottom: 24, zIndex: 40, background: 'var(--surface-3)', border: '1px solid var(--ember-line)', borderRadius: 16, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 12px 30px rgba(0,0,0,0.5)' }}>
+          <span style={{ color: 'var(--ember)' }}><IClock /></span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--faint)', letterSpacing: '0.06em' }}>REST</div>
+            <div className="num" style={{ fontSize: 22, lineHeight: 1, color: 'var(--ember-bright)' }}>{fmtTime(rest)}</div>
+          </div>
+          <button onClick={() => setRest(r => r + 15)} className="btn-ghost tap" style={{ padding: '8px 12px', fontSize: 13 }}>+15s</button>
+          <button onClick={() => setRest(0)} className="btn-primary tap" style={{ padding: '8px 14px', fontSize: 13 }}>Skip</button>
+        </div>
+      )}
+
+      {/* Exercise picker */}
+      <Sheet open={pickOpen} onClose={() => setPickOpen(false)} title="Add exercise">
+        <div style={{ position: 'relative', marginBottom: 12 }}>
+          <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'var(--faint)' }}><ISearch /></span>
+          <input className="field" autoFocus value={pickQ} onChange={e => setPickQ(e.target.value)} placeholder="Search exercises…" style={{ paddingLeft: 40 }} />
+        </div>
+        <div style={{ maxHeight: 300, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {picks.map(ex => (
+            <div key={ex.id} onClick={() => addExercise(ex)} className="card tap" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ color: 'var(--ember)' }}>{ex.type === 'cardio' ? <IClock /> : <IDumbbell />}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, fontSize: 14.5 }}>{ex.name}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{ex.category} · {ex.equipment}</div>
+              </div>
+              <span style={{ color: 'var(--ember)' }}><IPlus /></span>
             </div>
-          )}
-
-          {session.exercises.map((ex, exIdx) => (
-            <ExerciseCard
-              key={ex.id}
-              exercise={ex}
-              onUpdateSet={(setIdx, field, val) => updateSet(exIdx, setIdx, field, val)}
-              onAddSet={() => addSet(exIdx)}
-              onRemove={() => removeExercise(exIdx)}
-              onUpdateCardio={(field, val) => updateCardio(exIdx, field, val)}
-            />
           ))}
-
-          <button
-            onClick={() => setShowExerciseModal(true)}
-            className="w-full py-4 rounded-2xl border-2 border-dashed border-slate-700 flex items-center justify-center gap-2 text-slate-500 hover:border-cyan-500/50 hover:text-cyan-400 transition-colors"
-          >
-            <Plus size={18} /> Add Exercise
-          </button>
         </div>
+      </Sheet>
 
-        {/* Add exercise modal */}
-        <Modal
-          open={showExerciseModal}
-          onClose={() => setShowExerciseModal(false)}
-          title="Add Exercise"
-          fullScreen
-        >
-          <div className="space-y-4">
-            {/* Type toggle */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setExerciseType('strength')}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                style={{
-                  background: exerciseType === 'strength' ? 'rgba(6,182,212,0.15)' : '#111827',
-                  border: `1px solid ${exerciseType === 'strength' ? '#06b6d4' : 'rgba(255,255,255,0.08)'}`,
-                  color: exerciseType === 'strength' ? '#06b6d4' : '#64748b',
-                }}
-              >
-                💪 Strength
-              </button>
-              <button
-                onClick={() => setExerciseType('cardio')}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                style={{
-                  background: exerciseType === 'cardio' ? 'rgba(16,185,129,0.15)' : '#111827',
-                  border: `1px solid ${exerciseType === 'cardio' ? '#10b981' : 'rgba(255,255,255,0.08)'}`,
-                  color: exerciseType === 'cardio' ? '#10b981' : '#64748b',
-                }}
-              >
-                🏃 Cardio
-              </button>
+      {/* Finish summary overlay */}
+      {finishOpen && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 85, background: 'rgba(5,6,8,0.78)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div className="card" style={{ width: '100%', padding: '26px 20px', textAlign: 'center', background: 'radial-gradient(120% 100% at 50% 0%, rgba(255,92,56,0.16), var(--surface) 60%)', borderColor: 'var(--ember-line)', animation: 'pop-in .3s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>
+              <span className="flame" style={{ color: 'var(--ember)' }}><IFlame /></span>
             </div>
-
-            {/* Custom search/input */}
-            <input
-              type="text"
-              placeholder="Type exercise name..."
-              value={customExercise}
-              onChange={(e) => setCustomExercise(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && customExercise.trim()) addExercise(customExercise.trim()); }}
-            />
-            {customExercise.trim() && (
-              <Button variant="primary" fullWidth onClick={() => addExercise(customExercise.trim())}>
-                Add "{customExercise.trim()}"
-              </Button>
-            )}
-
-            {/* Quick picks */}
-            <div>
-              <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">Quick pick</p>
-              <div className="grid grid-cols-2 gap-2">
-                {QUICK_EXERCISES.filter((e) => !customExercise || e.toLowerCase().includes(customExercise.toLowerCase())).map((e) => (
-                  <button
-                    key={e}
-                    onClick={() => addExercise(e)}
-                    className="py-2.5 px-3 rounded-xl text-sm text-left text-slate-300 transition-colors"
-                    style={{ background: '#111827', border: '1px solid rgba(255,255,255,0.06)' }}
-                  >
-                    {e}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Modal>
-      </div>
-    );
-  }
-
-  // ── Idle (workout list) ───────────────────────────────────────────────────
-  return (
-    <div className="fade-up px-4 pt-6 pb-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Workouts</h1>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
-          <Zap size={13} className="text-amber-400" />
-          <span className="text-xs font-semibold text-amber-400">Ready</span>
-        </div>
-      </div>
-
-      {/* Start button */}
-      <button
-        onClick={() => setShowNameModal(true)}
-        className="w-full py-5 rounded-3xl flex flex-col items-center gap-2 transition-all active:scale-95"
-        style={{
-          background: 'linear-gradient(135deg, rgba(6,182,212,0.15), rgba(168,85,247,0.15))',
-          border: '1px solid rgba(6,182,212,0.3)',
-          boxShadow: '0 0 30px rgba(6,182,212,0.15)',
-        }}
-      >
-        <Play size={32} className="text-cyan-400" />
-        <span className="text-lg font-bold text-white">Start Workout</span>
-        <span className="text-xs text-slate-400">Tap to begin tracking</span>
-      </button>
-
-      {/* History */}
-      <div>
-        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Recent Workouts</h2>
-        {history.length === 0 ? (
-          <Card className="text-center py-8">
-            <Dumbbell size={24} className="text-slate-600 mx-auto mb-2" />
-            <p className="text-slate-400 text-sm">No workouts yet. Start your first one!</p>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {history.map((w) => (
-              <WorkoutHistoryCard key={w.id} workout={w} onDelete={() => {
-                deleteWorkout(w.id);
-                setHistory((h) => h.filter((x) => x.id !== w.id));
-              }} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Name modal */}
-      <Modal open={showNameModal} onClose={() => setShowNameModal(false)} title="Start Workout">
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm text-slate-400 mb-1.5">Workout name (optional)</label>
-            <input
-              type="text"
-              placeholder={`Workout — ${new Date().toLocaleDateString('en-US', { weekday: 'long' })}`}
-              value={workoutName}
-              onChange={(e) => setWorkoutName(e.target.value)}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {['Push Day', 'Pull Day', 'Leg Day', 'Upper Body', 'Lower Body', 'Full Body', 'Cardio', 'Arms'].map((n) => (
-              <button
-                key={n}
-                onClick={() => setWorkoutName(n)}
-                className="py-2.5 rounded-xl text-sm font-medium transition-all"
-                style={{
-                  background: workoutName === n ? 'rgba(6,182,212,0.15)' : '#111827',
-                  border: `1px solid ${workoutName === n ? '#06b6d4' : 'rgba(255,255,255,0.06)'}`,
-                  color: workoutName === n ? '#06b6d4' : '#94a3b8',
-                }}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-          <Button variant="primary" fullWidth size="lg" onClick={startWorkout} className="flex items-center justify-center gap-2">
-            <Play size={18} /> Let&apos;s Go!
-          </Button>
-        </div>
-      </Modal>
-    </div>
-  );
-}
-
-// ─── Exercise Card ─────────────────────────────────────────────────────────────
-
-function ExerciseCard({
-  exercise, onUpdateSet, onAddSet, onRemove, onUpdateCardio,
-}: {
-  exercise: LoggedExercise;
-  onUpdateSet: (setIdx: number, field: keyof ExerciseSet, val: string | boolean) => void;
-  onAddSet: () => void;
-  onRemove: () => void;
-  onUpdateCardio: (field: keyof CardioLog, val: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(true);
-
-  return (
-    <Card>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2 flex-1">
-          <span className="text-base">{exercise.type === 'cardio' ? '🏃' : '💪'}</span>
-          <span className="text-sm font-bold text-white">{exercise.name}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setExpanded((e) => !e)} className="p-1.5 text-slate-500 hover:text-slate-300">
-            {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </button>
-          <button onClick={onRemove} className="p-1.5 text-slate-600 hover:text-red-400">
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </div>
-
-      {expanded && (
-        <>
-          {exercise.type === 'strength' && exercise.sets && (
-            <div className="space-y-2">
-              {/* Set headers */}
-              <div className="grid grid-cols-[32px_1fr_1fr_80px_28px] gap-1.5 px-1">
-                <span className="text-[11px] text-slate-500 text-center">Set</span>
-                <span className="text-[11px] text-slate-500 text-center">Reps</span>
-                <span className="text-[11px] text-slate-500 text-center">Weight (lbs)</span>
-                <span className="text-[11px] text-slate-500 text-center">Rest (s)</span>
-                <span />
-              </div>
-
-              {exercise.sets.map((set, i) => (
-                <div key={i} className="grid grid-cols-[32px_1fr_1fr_80px_28px] gap-1.5 items-center">
-                  <span
-                    className="text-xs font-bold text-center rounded-lg py-1"
-                    style={{ background: set.completed ? 'rgba(16,185,129,0.15)' : '#111827', color: set.completed ? '#10b981' : '#64748b' }}
-                  >
-                    {i + 1}
-                  </span>
-                  <input
-                    type="number"
-                    value={set.reps || ''}
-                    onChange={(e) => onUpdateSet(i, 'reps', e.target.value)}
-                    className="text-center text-sm"
-                    style={{ padding: '8px 4px', borderRadius: '10px' }}
-                    inputMode="numeric"
-                  />
-                  <input
-                    type="number"
-                    value={set.weightLbs || ''}
-                    onChange={(e) => onUpdateSet(i, 'weightLbs', e.target.value)}
-                    className="text-center text-sm"
-                    style={{ padding: '8px 4px', borderRadius: '10px' }}
-                    inputMode="decimal"
-                  />
-                  <input
-                    type="number"
-                    value={set.restSec || ''}
-                    onChange={(e) => onUpdateSet(i, 'restSec', e.target.value)}
-                    className="text-center text-sm"
-                    style={{ padding: '8px 4px', borderRadius: '10px' }}
-                    inputMode="numeric"
-                  />
-                  <button
-                    onClick={() => onUpdateSet(i, 'completed', !set.completed)}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                    style={{ background: set.completed ? 'rgba(16,185,129,0.2)' : '#111827', border: `1px solid ${set.completed ? '#10b981' : 'rgba(255,255,255,0.1)'}` }}
-                  >
-                    {set.completed ? <Check size={13} className="text-emerald-400" /> : <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />}
-                  </button>
+            <div className="h-display" style={{ fontSize: 30 }}>Workout done</div>
+            <div style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 14, marginTop: 4 }}>Logged & locked in. 💪</div>
+            <div style={{ display: 'flex', gap: 10, margin: '20px 0' }}>
+              {[['Time', fmtTime(elapsed)], ['Sets', String(doneSets)], ['Volume', `${Math.round(volume).toLocaleString()} kg`]].map(([l, v]) => (
+                <div key={l} className="card" style={{ flex: 1, padding: '12px 6px', background: 'var(--surface-2)' }}>
+                  <div className="num" style={{ fontSize: 19 }}>{v}</div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--faint)', letterSpacing: '0.06em', marginTop: 2 }}>{l}</div>
                 </div>
               ))}
-
-              <button
-                onClick={onAddSet}
-                className="w-full py-2 rounded-xl text-xs text-slate-400 hover:text-cyan-400 hover:bg-cyan-500/5 transition-colors border border-dashed border-slate-700"
-              >
-                + Add Set
-              </button>
             </div>
-          )}
-
-          {exercise.type === 'cardio' && exercise.cardio && (
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Duration (min)</label>
-                <input
-                  type="number"
-                  value={exercise.cardio.durationMin || ''}
-                  onChange={(e) => onUpdateCardio('durationMin', e.target.value)}
-                  inputMode="numeric"
-                  style={{ padding: '8px 12px', borderRadius: '10px' }}
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Speed (mph)</label>
-                <input
-                  type="number"
-                  value={exercise.cardio.speedMph || ''}
-                  onChange={(e) => onUpdateCardio('speedMph', e.target.value)}
-                  inputMode="decimal"
-                  style={{ padding: '8px 12px', borderRadius: '10px' }}
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Incline (%)</label>
-                <input
-                  type="number"
-                  value={exercise.cardio.inclinePct || ''}
-                  onChange={(e) => onUpdateCardio('inclinePct', e.target.value)}
-                  inputMode="decimal"
-                  style={{ padding: '8px 12px', borderRadius: '10px' }}
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Calories burned</label>
-                <input
-                  type="number"
-                  value={exercise.cardio.caloriesBurned || ''}
-                  onChange={(e) => onUpdateCardio('caloriesBurned', e.target.value)}
-                  inputMode="numeric"
-                  style={{ padding: '8px 12px', borderRadius: '10px' }}
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Distance (mi)</label>
-                <input
-                  type="number"
-                  value={exercise.cardio.distanceMi || ''}
-                  onChange={(e) => onUpdateCardio('distanceMi', e.target.value)}
-                  inputMode="decimal"
-                  style={{ padding: '8px 12px', borderRadius: '10px' }}
-                />
-              </div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 99, background: 'var(--ember-soft)', border: '1px solid var(--ember-line)', marginBottom: 20 }}>
+              <span style={{ color: 'var(--ember)' }}><IBolt /></span>
+              <span className="num" style={{ fontSize: 22, color: 'var(--ember-bright)' }}>+{xpEarned} XP</span>
             </div>
-          )}
-        </>
-      )}
-    </Card>
-  );
-}
-
-// ─── Workout history card ──────────────────────────────────────────────────────
-
-function WorkoutHistoryCard({ workout, onDelete }: { workout: WorkoutSession; onDelete: () => void }) {
-  const [confirming, setConfirming] = useState(false);
-  const totalSets = workout.exercises.reduce((acc, ex) => acc + (ex.sets?.length ?? 0), 0);
-
-  return (
-    <Card className="flex items-center gap-3">
-      <div
-        className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-        style={{ background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.2)' }}
-      >
-        <Dumbbell size={18} className="text-cyan-400" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-white truncate">{workout.name}</p>
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-xs text-slate-400">{new Date(workout.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-          <span className="text-xs text-slate-600">·</span>
-          <span className="text-xs text-slate-400">{workout.durationMin}m</span>
-          <span className="text-xs text-slate-600">·</span>
-          <span className="text-xs text-slate-400">{workout.exercises.length} exercises</span>
-          {totalSets > 0 && <><span className="text-xs text-slate-600">·</span><span className="text-xs text-slate-400">{totalSets} sets</span></>}
-        </div>
-      </div>
-      <div className="flex items-center gap-1">
-        <span className="text-xs font-bold text-amber-400">+{workout.xpEarned}</span>
-        {confirming ? (
-          <div className="flex gap-1">
-            <button onClick={onDelete} className="p-1.5 text-red-400"><Check size={14} /></button>
-            <button onClick={() => setConfirming(false)} className="p-1.5 text-slate-500"><X size={14} /></button>
+            <button onClick={closeFinish} className="btn-primary tap" style={{ width: '100%', padding: 15, fontSize: 15 }}>Back to home</button>
           </div>
-        ) : (
-          <button onClick={() => setConfirming(true)} className="p-1.5 text-slate-600 hover:text-red-400 transition-colors">
-            <Trash2 size={14} />
-          </button>
-        )}
-      </div>
-    </Card>
+        </div>
+      )}
+    </div>
   );
 }
