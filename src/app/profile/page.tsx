@@ -64,7 +64,7 @@ function Onboarding({ onComplete }: { onComplete: (p: Profile) => void }) {
   );
 
   return (
-    <div className="app-root" style={{ position: 'fixed', inset: 0, zIndex: 10 }}>
+    <div className="app-root" style={{ position: 'fixed', inset: 0, zIndex: 50 }}>
       <div style={{ height: 54 }} />
 
       {/* Step progress header */}

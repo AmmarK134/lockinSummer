@@ -93,7 +93,7 @@ export default function WorkoutPage() {
   const title = state.todayWorkout.name;
 
   return (
-    <div className="app-root" style={{ position: 'fixed', inset: 0, zIndex: 5 }}>
+    <div className="app-root" style={{ position: 'fixed', inset: 0, zIndex: 50 }}>
       <div style={{ height: 52 }} />
 
       {/* Top bar */}
