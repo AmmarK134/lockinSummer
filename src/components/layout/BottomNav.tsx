@@ -1,44 +1,99 @@
 'use client';
+import { usePathname, useRouter } from 'next/navigation';
+import { useApp } from '@/contexts/AppContext';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Home, Dumbbell, BookOpen, Apple, TrendingUp } from 'lucide-react';
+function IconHome({ size = 23, sw = 1.8 }: { size?: number; sw?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/><path d="M9.5 20v-5h5v5"/>
+    </svg>
+  );
+}
+function IconGuide({ size = 23, sw = 1.8 }: { size?: number; sw?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M9 4v14"/><path d="M12.5 8.5h3M12.5 12h3"/>
+    </svg>
+  );
+}
+function IconChart({ size = 23, sw = 1.8 }: { size?: number; sw?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 16l3.5-4 3 2.5L20 8"/>
+    </svg>
+  );
+}
+function IconUser({ size = 23, sw = 1.8 }: { size?: number; sw?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>
+    </svg>
+  );
+}
+function IconPlus({ size = 28, sw = 2.4 }: { size?: number; sw?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+  );
+}
 
-const NAV_ITEMS = [
-  { href: '/',           icon: Home,       label: 'Home'      },
-  { href: '/workout',    icon: Dumbbell,   label: 'Workout'   },
-  { href: '/exercises',  icon: BookOpen,   label: 'Exercises' },
-  { href: '/nutrition',  icon: Apple,      label: 'Nutrition' },
-  { href: '/progress',   icon: TrendingUp, label: 'Progress'  },
+const LEFT_TABS = [
+  { id: '/', label: 'Home', Icon: IconHome },
+  { id: '/exercises', label: 'Guide', Icon: IconGuide },
+];
+const RIGHT_TABS = [
+  { id: '/progress', label: 'Progress', Icon: IconChart },
+  { id: '/profile', label: 'Profile', Icon: IconUser },
 ];
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { setAddOpen } = useApp();
+
+  const isActive = (id: string) =>
+    id === '/' ? pathname === '/' : pathname.startsWith(id);
 
   return (
-    <nav
-      className="fixed bottom-0 left-0 right-0 z-50"
-      style={{ background: 'rgba(7,11,20,0.95)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.06)' }}
-    >
-      <div className="flex items-center justify-around px-2 pt-2 pb-safe" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}>
-        {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-          const active = pathname === href || (href !== '/' && pathname.startsWith(href));
-          return (
-            <Link
-              key={href}
-              href={href}
-              className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all duration-200 min-w-[56px]"
-              style={{
-                color: active ? '#06b6d4' : '#475569',
-                background: active ? 'rgba(6,182,212,0.1)' : 'transparent',
-              }}
-            >
-              <Icon size={22} strokeWidth={active ? 2.5 : 1.8} />
-              <span className="text-[10px] font-medium tracking-wide">{label}</span>
-            </Link>
-          );
-        })}
+    <div className="bottom-nav">
+      {LEFT_TABS.map(({ id, label, Icon }) => (
+        <button
+          key={id}
+          className={`nav-item${isActive(id) ? ' active' : ''}`}
+          onClick={() => router.push(id)}
+        >
+          <Icon size={23} sw={isActive(id) ? 2.1 : 1.8} />
+          <span>{label}</span>
+        </button>
+      ))}
+
+      {/* Center FAB */}
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+        <button
+          onClick={() => setAddOpen(true)}
+          className="tap"
+          style={{
+            width: 58, height: 58, borderRadius: 20, marginTop: -24, border: 'none', cursor: 'pointer',
+            background: 'var(--ember)', color: '#1a0a06',
+            boxShadow: '0 10px 26px -6px var(--ember-glow), 0 0 0 6px var(--bg)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <IconPlus size={28} sw={2.4} />
+        </button>
       </div>
-    </nav>
+
+      {RIGHT_TABS.map(({ id, label, Icon }) => (
+        <button
+          key={id}
+          className={`nav-item${isActive(id) ? ' active' : ''}`}
+          onClick={() => router.push(id)}
+        >
+          <Icon size={23} sw={isActive(id) ? 2.1 : 1.8} />
+          <span>{label}</span>
+        </button>
+      ))}
+    </div>
   );
 }

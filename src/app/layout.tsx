@@ -1,12 +1,27 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
+import { Saira_Condensed, Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/layout/AppShell";
 import ServiceWorkerRegistrar from "@/components/layout/ServiceWorkerRegistrar";
 
-const geist = Geist({
-  variable: "--font-geist-sans",
+const sairaCondensed = Saira_Condensed({
   subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+const hankenGrotesk = Hanken_Grotesk({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-ui",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+  variable: "--font-mono",
   display: "swap",
 });
 
@@ -19,12 +34,13 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "LockIn",
   },
-  formatDetection: {
-    telephone: false,
-  },
+  formatDetection: { telephone: false },
   icons: {
-    icon: "/icon.svg",
-    apple: "/icon.svg",
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icon-180.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
@@ -34,23 +50,21 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#070b14",
+  themeColor: "#0a0b0e",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={geist.variable}>
+    <html
+      lang="en"
+      className={`${sairaCondensed.variable} ${hankenGrotesk.variable} ${jetbrainsMono.variable}`}
+    >
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="LockIn" />
-        <link rel="apple-touch-icon" href="/icon.svg" />
-        <link rel="mask-icon" href="/icon.svg" color="#06b6d4" />
+        <link rel="apple-touch-icon" href="/icon-180.png" />
       </head>
       <body>
         <ServiceWorkerRegistrar />

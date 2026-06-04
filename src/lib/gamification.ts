@@ -1,128 +1,46 @@
-import type { RankInfo } from '@/types';
+export interface Rank {
+  name: string;
+  min: number;
+  tag: string;
+  accent: string;
+}
 
-// ─── Ranks ────────────────────────────────────────────────────────────────────
-
-export const RANKS: RankInfo[] = [
-  { name: 'Protein Peasant',   minXP: 0,      maxXP: 499,   cssClass: 'rank-peasant',     color: '#94a3b8', emoji: '🥔' },
-  { name: 'Cardio Goblin',     minXP: 500,    maxXP: 1499,  cssClass: 'rank-goblin-cardio', color: '#22c55e', emoji: '🏃' },
-  { name: 'Bench Baby',        minXP: 1500,   maxXP: 2999,  cssClass: 'rank-bench',        color: '#3b82f6', emoji: '👶' },
-  { name: 'Treadmill Menace',  minXP: 3000,   maxXP: 4999,  cssClass: 'rank-menace',       color: '#06b6d4', emoji: '😤' },
-  { name: 'Creatine Gremlin',  minXP: 5000,   maxXP: 7499,  cssClass: 'rank-gremlin',      color: '#14b8a6', emoji: '🧪' },
-  { name: 'Pump Apprentice',   minXP: 7500,   maxXP: 9999,  cssClass: 'rank-apprentice',   color: '#a855f7', emoji: '💪' },
-  { name: 'Gym Goblin',        minXP: 10000,  maxXP: 14999, cssClass: 'rank-gym-goblin',   color: '#6366f1', emoji: '👺' },
-  { name: 'Rep Goblin',        minXP: 15000,  maxXP: 19999, cssClass: 'rank-rep-goblin',   color: '#8b5cf6', emoji: '🔁' },
-  { name: 'Bulk Bandit',       minXP: 20000,  maxXP: 29999, cssClass: 'rank-bandit',       color: '#f97316', emoji: '🍗' },
-  { name: 'Cutting Creature',  minXP: 30000,  maxXP: 39999, cssClass: 'rank-creature',     color: '#eab308', emoji: '⚔️' },
-  { name: 'Sweat Baron',       minXP: 40000,  maxXP: 54999, cssClass: 'rank-baron',        color: '#ef4444', emoji: '👑' },
-  { name: 'Iron Wizard',       minXP: 55000,  maxXP: 69999, cssClass: 'rank-wizard',       color: '#ec4899', emoji: '🧙' },
-  { name: 'Swole Sage',        minXP: 70000,  maxXP: 84999, cssClass: 'rank-sage',         color: '#f59e0b', emoji: '🧘' },
-  { name: 'Pump Lord',         minXP: 85000,  maxXP: 99999, cssClass: 'rank-lord',         color: '#e2e8f0', emoji: '🏋️' },
-  { name: 'Grandmaster Baiter',minXP: 100000, maxXP: Infinity, cssClass: 'rank-grandmaster', color: '#fbbf24', emoji: '🎣' },
+export const RANKS: Rank[] = [
+  { name: 'Protein Peasant',    min: 0,     tag: 'Everyone starts somewhere. Usually sore.',          accent: '#9aa3ad' },
+  { name: 'Bench Baby',         min: 400,   tag: 'You found the bench. It found you back.',            accent: '#b6bdc6' },
+  { name: 'Cardio Goblin',      min: 1000,  tag: 'Lurks near the treadmills. Feral.',                  accent: '#7fd0ff' },
+  { name: 'Treadmill Menace',   min: 1900,  tag: 'A danger to incline settings everywhere.',           accent: '#56c2ff' },
+  { name: 'Creatine Gremlin',   min: 3100,  tag: 'Slightly bloated. Fully committed.',                 accent: '#54e08a' },
+  { name: 'Pump Apprentice',    min: 4700,  tag: 'The veins are starting to learn.',                   accent: '#7be0a0' },
+  { name: 'Rep Goblin',         min: 6800,  tag: 'Hoards reps like shiny treasure.',                   accent: '#ffd24a' },
+  { name: 'Bulk Bandit',        min: 9500,  tag: 'Steals gains in broad daylight.',                    accent: '#ffb24a' },
+  { name: 'Cutting Creature',   min: 13000, tag: 'Shredding. Cranky. Iconic.',                         accent: '#ff9a4a' },
+  { name: 'Sweat Baron',        min: 17500, tag: 'Rules the rack. Owns a towel empire.',               accent: '#ff7a55' },
+  { name: 'Iron Wizard',        min: 23000, tag: 'Casts barbell spells. Eats oats.',                   accent: '#ff5c38' },
+  { name: 'Swole Sage',         min: 30000, tag: 'Has achieved inner and outer mass.',                 accent: '#ff5c38' },
+  { name: 'Pump Lord',          min: 39000, tag: 'The pump is eternal now.',                           accent: '#ff4d2e' },
+  { name: 'Grandmaster Baiter', min: 50000, tag: 'Peak form. Maximum mischief. Legendary.',            accent: '#ffd24a' },
 ];
 
-export function getRankForXP(xp: number): RankInfo {
-  return (
-    [...RANKS].reverse().find((r) => xp >= r.minXP) ?? RANKS[0]
-  );
+export interface RankInfo {
+  idx: number;
+  rank: Rank;
+  next: Rank | null;
+  pct: number;
+  into: number;
+  span: number;
+  toNext: number;
 }
 
-export function getNextRank(xp: number): RankInfo | null {
-  const currentRankIdx = RANKS.findIndex((r) => xp >= r.minXP && xp <= r.maxXP);
-  return currentRankIdx >= 0 && currentRankIdx < RANKS.length - 1
-    ? RANKS[currentRankIdx + 1]
-    : null;
-}
-
-export function getProgressToNextRank(xp: number): number {
-  const current = getRankForXP(xp);
-  if (current.maxXP === Infinity) return 100;
-  const range = current.maxXP - current.minXP + 1;
-  const progress = xp - current.minXP;
-  return Math.min(100, Math.round((progress / range) * 100));
-}
-
-// ─── XP Values ────────────────────────────────────────────────────────────────
-
-export const XP = {
-  COMPLETE_WORKOUT: 100,
-  PER_EXERCISE: 10,
-  PER_SET: 2,
-  LOG_MEAL: 25,
-  HIT_CALORIE_GOAL: 50,
-  HIT_PROTEIN_GOAL: 50,
-  HIT_WATER_GOAL: 30,
-  COMPLETE_CARDIO: 50,
-  WEEKLY_WEIGH_IN: 20,
-  STREAK_DAY: 5,   // multiplied by streak count
-} as const;
-
-export function calcWorkoutXP(exerciseCount: number, totalSets: number, hasCardio: boolean): number {
-  return (
-    XP.COMPLETE_WORKOUT +
-    exerciseCount * XP.PER_EXERCISE +
-    totalSets * XP.PER_SET +
-    (hasCardio ? XP.COMPLETE_CARDIO : 0)
-  );
-}
-
-// ─── Streak logic ─────────────────────────────────────────────────────────────
-
-export function computeStreak(lastWorkoutDate: string, currentStreak: number): number {
-  if (!lastWorkoutDate) return 0;
-  const today = new Date().toISOString().split('T')[0];
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-
-  if (lastWorkoutDate === today) return currentStreak;
-  if (lastWorkoutDate === yesterday) return currentStreak;
-  return 0; // streak broken
-}
-
-// ─── Achievement definitions ──────────────────────────────────────────────────
-
-export const ACHIEVEMENTS = [
-  { id: 'first_workout',    label: 'First Blood',         desc: 'Logged your first workout',             emoji: '🩸' },
-  { id: 'workout_3',        label: 'Hat Trick',            desc: '3 workouts logged',                     emoji: '🎩' },
-  { id: 'workout_10',       label: 'Double Digits',        desc: '10 workouts logged',                    emoji: '🔟' },
-  { id: 'workout_50',       label: 'Gym Rat',              desc: '50 workouts logged',                    emoji: '🐀' },
-  { id: 'streak_3',         label: 'On a Roll',            desc: '3-day workout streak',                  emoji: '🎲' },
-  { id: 'streak_7',         label: 'Week Warrior',         desc: '7-day streak',                          emoji: '⚔️' },
-  { id: 'streak_30',        label: 'Unbreakable',          desc: '30-day streak',                         emoji: '💎' },
-  { id: 'first_meal',       label: 'Fuel Up',              desc: 'Logged your first meal',                emoji: '🍽️' },
-  { id: 'protein_goal',     label: 'Protein King',         desc: 'Hit protein goal 7 days in a row',      emoji: '👑' },
-  { id: 'first_weigh_in',   label: 'Face the Scale',       desc: 'First weekly weigh-in',                 emoji: '⚖️' },
-  { id: 'rank_up_1',        label: 'Ascending',            desc: 'Reached Cardio Goblin rank',            emoji: '📈' },
-  { id: 'xp_1000',          label: 'Four Figures',         desc: 'Earned 1,000 total XP',                 emoji: '💯' },
-  { id: 'xp_10000',         label: 'Five Figures',         desc: 'Earned 10,000 total XP',                emoji: '🏆' },
-] as const;
-
-export type AchievementId = (typeof ACHIEVEMENTS)[number]['id'];
-
-export function checkAchievements(
-  currentAchievements: string[],
-  totalWorkouts: number,
-  streak: number,
-  xp: number,
-  totalMeals: number,
-  totalWeighIns: number,
-): string[] {
-  const earned: string[] = [...currentAchievements];
-
-  const grant = (id: string) => {
-    if (!earned.includes(id)) earned.push(id);
-  };
-
-  if (totalWorkouts >= 1)  grant('first_workout');
-  if (totalWorkouts >= 3)  grant('workout_3');
-  if (totalWorkouts >= 10) grant('workout_10');
-  if (totalWorkouts >= 50) grant('workout_50');
-  if (streak >= 3)  grant('streak_3');
-  if (streak >= 7)  grant('streak_7');
-  if (streak >= 30) grant('streak_30');
-  if (totalMeals >= 1)    grant('first_meal');
-  if (totalWeighIns >= 1) grant('first_weigh_in');
-  if (xp >= 500)   grant('rank_up_1');
-  if (xp >= 1000)  grant('xp_1000');
-  if (xp >= 10000) grant('xp_10000');
-
-  return earned;
+export function rankForXp(xp: number): RankInfo {
+  let idx = 0;
+  for (let i = 0; i < RANKS.length; i++) {
+    if (xp >= RANKS[i].min) idx = i;
+  }
+  const cur = RANKS[idx];
+  const next = RANKS[idx + 1] || null;
+  const span = next ? next.min - cur.min : 1;
+  const into = xp - cur.min;
+  const pct = next ? Math.min(1, into / span) : 1;
+  return { idx, rank: cur, next, pct, into, span, toNext: next ? next.min - xp : 0 };
 }
