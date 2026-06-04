@@ -21,10 +21,7 @@ const ICog = () => (
   <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M4.2 7.5l1.9 1.1M17.9 15.4l1.9 1.1M19.8 7.5l-1.9 1.1M6.1 15.4l-1.9 1.1"/></svg>
 );
 const Logo = () => (
-  <svg width={42} height={42} viewBox="0 0 24 24" fill="none">
-    <rect x="2.5" y="2.5" width="19" height="19" rx="6" fill="var(--ember)"/>
-    <path d="M12.6 5.5L7 13.2h4.3l-.9 5.3L17 10.6h-4.4z" fill="#1a0a06"/>
-  </svg>
+  <img src="/logo.jpg" alt="LockIn" width={42} height={42} style={{ borderRadius: 10 }} />
 );
 
 type FormState = Omit<Profile, '_startXp'>;
