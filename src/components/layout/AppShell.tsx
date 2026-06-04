@@ -200,7 +200,7 @@ function InnerShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-root">
-      <div style={{ height: 52 }} />
+      <div style={{ height: 'max(52px, env(safe-area-inset-top, 0px))' }} />
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {children}
       </div>

@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useApp, DEMO_STATE, type Profile } from '@/contexts/AppContext';
+import { useApp, createFreshState, type Profile } from '@/contexts/AppContext';
 import { rankForXp } from '@/lib/gamification';
 import { GOALS, ACTIVITY_LEVELS, EXPERIENCE_LEVELS, DIET_PREFS, DAYS } from '@/data/exercises';
 import Bar from '@/components/ui/Bar';
@@ -65,7 +65,7 @@ function Onboarding({ onComplete }: { onComplete: (p: Profile) => void }) {
 
   return (
     <div className="app-root" style={{ position: 'fixed', inset: 0, zIndex: 50 }}>
-      <div style={{ height: 54 }} />
+      <div style={{ height: 'max(54px, env(safe-area-inset-top, 0px))' }} />
 
       {/* Step progress header */}
       {step < 4 && (
@@ -301,7 +301,7 @@ export default function ProfilePage() {
 
   const handleComplete = (p: Profile) => {
     setProfile(p);
-    setState({ ...DEMO_STATE, xp: p._startXp });
+    setState(createFreshState(p));
   };
 
   if (!profile) return <Onboarding onComplete={handleComplete} />;

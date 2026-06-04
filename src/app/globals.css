@@ -44,7 +44,7 @@ html {
 }
 
 body {
-  background: #000;
+  background: var(--bg);
   font-family: var(--font-ui, 'Hanken Grotesk', system-ui, sans-serif);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
